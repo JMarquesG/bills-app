@@ -1,0 +1,245 @@
+@import "tailwindcss";
+
+:root {
+  /* Deep Blue Dark theme */
+  --background: 220 28% 10%;      /* deep navy */
+  --foreground: 0 0% 100%;        /* white text */
+  --card: 220 28% 14%;            /* slightly lighter navy */
+  --card-foreground: 0 0% 100%;
+  --popover: 220 28% 14%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 221 83% 53%;         /* blue-600 */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 23% 18%;       /* dark blue-gray */
+  --secondary-foreground: 0 0% 100%;
+  --muted: 220 20% 22%;
+  --muted-foreground: 220 12% 65%;
+  --accent: 217 91% 60%;          /* blue-500 */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 7 97% 46%;       /* red */
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 18% 20%;
+  --input: 220 18% 20%;
+  --ring: 221 83% 53%;
+  --radius: 0.625rem;              /* 10px radius */
+  /* Sidebar */
+  --sidebar-background: 220 28% 10%;
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-primary: 221 83% 53%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 23% 18%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-border: 220 18% 20%;
+  --sidebar-ring: 221 83% 53%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Same deep blue theme for prefers-dark */
+    --background: 220 28% 10%;
+    --foreground: 0 0% 100%;
+    --card: 220 28% 14%;
+    --card-foreground: 0 0% 100%;
+    --popover: 220 28% 14%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 23% 18%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 220 20% 22%;
+    --muted-foreground: 220 12% 65%;
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 7 97% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 18% 20%;
+    --input: 220 18% 20%;
+    --ring: 221 83% 53%;
+    --sidebar-background: 220 28% 10%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 23% 18%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 18% 20%;
+    --sidebar-ring: 221 83% 53%;
+  }
+}
+
+.dark {
+  --background: 220 28% 10%;
+  --foreground: 0 0% 100%;
+  --card: 220 28% 14%;
+  --card-foreground: 0 0% 100%;
+  --popover: 220 28% 14%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 23% 18%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 220 20% 22%;
+  --muted-foreground: 220 12% 65%;
+  --accent: 217 91% 60%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 7 97% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 18% 20%;
+  --input: 220 18% 20%;
+  --ring: 221 83% 53%;
+  --sidebar-background: 220 28% 10%;
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-primary: 221 83% 53%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 23% 18%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-border: 220 18% 20%;
+  --sidebar-ring: 221 83% 53%;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: 'Inter', 'SF Pro Display', sans-serif;
+  font-feature-settings: "rlig" 1, "calt" 1;
+  line-height: 1.5;
+}
+
+/* Apple-style scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted));
+  border-radius: 20px;
+  border: transparent;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground));
+}
+
+/* Custom animations for Apple feel */
+.apple-blur {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.dashboard-card {
+  background: hsl(var(--card));
+  border-radius: 10px;
+  border: none;
+  box-shadow: 0px 30px 60px 0px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease-in-out;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0px 35px 70px 0px rgba(0, 0, 0, 0.25);
+}
+
+/* Keep apple-card as alias for compatibility */
+.apple-card {
+  background: hsl(var(--card));
+  border-radius: 10px;
+  border: none;
+  box-shadow: 0px 30px 60px 0px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease-in-out;
+}
+
+.apple-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0px 35px 70px 0px rgba(0, 0, 0, 0.25);
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium cursor-pointer select-none outline-none transition-all duration-200 disabled:pointer-events-none disabled:opacity-50;
+    background-color: hsl(var(--secondary));
+    color: hsl(var(--foreground));
+    border: none;
+  }
+  .btn:hover { 
+    background-color: hsl(var(--secondary) / 0.8); 
+    transform: translateY(-1px);
+  }
+  .btn-primary { 
+    background-color: hsl(var(--primary)); 
+    color: hsl(var(--primary-foreground)); 
+  }
+  .btn-primary:hover { 
+    background-color: hsl(var(--primary) / 0.9); 
+    transform: translateY(-1px);
+  }
+  .btn-secondary { 
+    background-color: hsl(var(--secondary)); 
+    color: hsl(var(--secondary-foreground)); 
+  }
+  .btn-secondary:hover { 
+    background-color: hsl(var(--secondary) / 0.8); 
+  }
+  .btn-outline { 
+    background-color: transparent; 
+    border: 1px solid hsl(var(--border));
+    color: hsl(var(--foreground));
+  }
+  .btn-outline:hover { 
+    background-color: hsl(var(--secondary)); 
+    border-color: hsl(var(--secondary));
+  }
+  .btn-ghost { 
+    background-color: transparent; 
+    color: hsl(var(--muted-foreground));
+  }
+  .btn-ghost:hover { 
+    background-color: hsl(var(--secondary) / 0.5); 
+    color: hsl(var(--foreground));
+  }
+  .btn-destructive { 
+    background-color: hsl(var(--destructive)); 
+    color: hsl(var(--destructive-foreground)); 
+  }
+  .btn-destructive:hover { 
+    background-color: hsl(var(--destructive) / 0.9); 
+  }
+  .btn-link { 
+    @apply underline-offset-4 hover:underline px-0 py-0 h-auto font-normal;
+    background: transparent;
+    color: hsl(var(--primary));
+  }
+  .btn-lg { @apply h-11 rounded-lg px-8; }
+  .btn-sm { @apply h-9 rounded-md px-3; }
+  .btn-xs { @apply h-8 rounded px-2 text-xs; }
+  .btn-icon { @apply h-10 w-10; }
+}

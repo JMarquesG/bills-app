@@ -1,0 +1,29 @@
+{
+  "name": "billing",
+  "version": "0.1.0",
+  "description": "Bills App - Desktop Invoice Management",
+  "author": "Bills App Team",
+  "main": "out/main/index.js",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron out/main/index.js",
+    "deploy:mac": "npm run build && npx electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "@bills/db": "*",
+    "@electron-toolkit/utils": "^4.0.0",
+    "electron-updater": "^6.3.9",
+    "pdf-lib": "^1.17.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.5.4"
+  }
+}

@@ -1,0 +1,135 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+# Bills App — Cursor Rules (comprehensive, lean)
+
+## Goals
+- Keep the stack minimal and aligned with the current repo.
+- Local-first desktop app with Electron (main/preload) + Next.js (renderer).
+- Embedded Postgres-like DB using PGlite + Drizzle ORM, persisted to disk.
+- No extra linters/formatters/test frameworks unless explicitly requested.
+
+## Tech (locked for now)
+- Monorepo: npm workspaces + Turborepo
+- Desktop: Electron (electron-vite, electron-builder, electron-updater)
+- UI: Next.js (App Router) + React (no Tailwind for now unless asked)
+- State: Zustand (local component state ok for simple screens)
+- Validation: Zod
+- DB: PGlite (@electric-sql/pglite) + Drizzle ORM (target Postgres dialect)
+- File watching: chokidar (to be added later)
+- No additional infra, build tools, or SaaS unless requested.
+
+## Folder responsibilities (DO NOT DEVIATE)
+- apps/desktop/........... Electron code (main + preload). Security-critical.
+  - src/main/............. App lifecycle, windows, IPC handlers.
+  - src/preload/.......... contextBridge API: safe, narrow surface.
+  - electron.vite.config.ts
+  - electron-builder.yml
+- apps/web/............... Next.js UI (renderer during dev, future web).
+  - app/.................. App Router routes.
+  - app/(routes)/......... Feature routes: dashboard, invoices, expenses, settings.
+  - app/api/.............. Server routes (Node runtime only).
+  - lib/.................. Client-side utilities (no Node APIs here).
+  - components/........... UI building blocks (pure React).
+  - store/................ Zustand stores (UI state only).
+- packages/db/............ DB access and schema (single source of truth).
+  - src/index.ts.......... DB init/exports (db/client/initDb/healthcheck).
+  - src/schema.ts......... Bootstrap SQL (current) and shared types.
+  - src/tables/*.ts....... (future) Drizzle table builders per entity.
+- pgdata/................. Local DB files in dev (auto-created). In prod: Electron userData/pgdata.
+
+## Runtime boundaries
+- Renderer (Next.js) is sandboxed. No Node APIs or fs access directly.
+- All filesystem/OS actions go through Electron main via preload-exposed APIs.
+- DB may be accessed from server-side Next.js code **only** (Node runtime), NOT from client components.
+- In production, the DB directory is Electron userData/pgdata; in dev, ./pgdata at repo root.
+
+## IPC (strict)
+- Enable: contextIsolation: true, nodeIntegration: false, sandbox: true.
+- Only expose whitelisted APIs via preload using contextBridge.
+- Each API must be:
+  - Named (verb-noun): "selectFolder", "openPath", "getInvoices", "createInvoice".
+  - Validated with Zod on the **main** side before performing actions.
+  - Returning plain JSON-serializable data. No class instances.
+
+### IPC Examples (generate code like this)
+- Preload:
+  - `contextBridge.exposeInMainWorld('api', { getInvoices: (q) => ipcRenderer.invoke('invoices:get', q) })`
+- Main:
+  - `ipcMain.handle('invoices:get', async (_e, qSchema.parse(q)) => { /* db query */ })`
+
+## Database usage & types
+- Connect via `packages/db/src/index.ts`:
+  - `import { db, client, initDb } from '@bills/db'`
+  - Always call `await initDb()` once (Electron main on app ready).
+- SQL compatibility:
+  - Use Postgres-friendly types (numeric(12,2), timestamp, text).
+  - Avoid vendor-specific extensions not supported by Supabase.
+- Schemas:
+  - Current bootstrap DDL lives in `packages/db/src/schema.ts`.
+  - Future: create `packages/db/src/tables/*.ts` with Drizzle's table builders (`pgTable`, `numeric`, etc.), and export a unified schema barrel from `packages/db/src/schema.ts`.
+- Types:
+  - Derive types from source-of-truth table builders (when added).
+  - Until then, define DTOs (input/output) with Zod in the **app layer**:
+    - Server input schemas: `apps/web/app/api/**/schemas.ts`
+    - Shared lightweight types can be in `packages/db/src/types.ts` if they reflect DB rows.
+- Money:
+  - Always use DECIMAL/NUMERIC in DB; in TS, represent as string and format in UI.
+- Dates:
+  - Store UTC in DB. Convert at the edge (UI).
+
+## Where code goes (routing)
+- UI pages, components, charts → `apps/web/...`
+- Server handlers (Next Route Handlers) for UI API → `apps/web/app/api/**/route.ts`
+- Electron-only features (watchers, file dialogs) → `apps/desktop/src/main/**`
+- Preload IPC surface → `apps/desktop/src/preload/**`
+- DB schema/queries/helpers → `packages/db/**`
+- do NOT write DB code directly inside Electron main unless it’s cross-cutting (e.g., app bootstrap).
+
+## Naming conventions
+- Files: kebab-case for filenames; PascalCase for React components.
+- Schemas (Zod): `SomethingSchema`, parsed types `Something`.
+- IPC channels: `domain:action` (e.g., `invoices:create`, `expenses:list`).
+- DB columns: snake_case; TS props: camelCase (map at the boundary if needed).
+
+## Env & paths
+- DB dir:
+  - DEV: `process.env.DB_DIR || ./pgdata`
+  - PROD: `join(app.getPath('userData'), 'pgdata')`
+- Renderer URL in dev: `RENDERER_URL=http://localhost:3000`
+- No secret keys checked into repo. If secrets needed later, use .env only in `apps/web` for server routes and never expose to client.
+
+## Data flow patterns (generate like this)
+1) UI action → Next server action or API route (validate with Zod) → DB via `@bills/db`.
+2) OS/file ops → Renderer calls preload API → `ipcRenderer.invoke(channel)` → Main validates → performs OS action → returns data.
+3) Avoid circular calls: renderer must not import Electron main modules; communicate only over IPC.
+
+## Error handling
+- Validate all external inputs with Zod in server/API and in main IPC handlers.
+- Return typed errors (shape: `{ error: { code: string, message: string } }`) rather than throwing across IPC boundaries.
+- Never leak raw stack traces to the client UI.
+
+## Minimal dependencies policy
+- Allowed by default: electron, electron-vite, electron-builder, electron-updater, next, react, zustand, zod, drizzle-orm, @electric-sql/pglite.
+- Ask before adding: UI kits, chart libs, chokidar, file-type, date libs, OCR, etc.
+- Banned for now: heavy analytics, large UI kits, CSS frameworks, prisma, knex, sequelize (we’re on Drizzle + PGlite).
+
+## Coding guidelines
+- Prefer module-scoped singletons (db client). No global mutable state.
+- Keep server-only files with `"use server"` or route handlers; never import Node APIs in client components.
+- Keep preload extremely small—just method exposure; all logic in main or web server routes.
+
+## Commits (optional guidance)
+- Conventional-ish but lightweight:
+  - feat: xxx
+  - fix: xxx
+  - chore: xxx
+  - refactor: xxx
+  - build: xxx
+- Keep diffs localized to the layer you’re touching.
+
+## Roadmap placeholders (for Cursor to respect)
+- Add chokidar watcher in Electron main → `apps/desktop/src/ma

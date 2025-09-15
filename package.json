@@ -1,0 +1,23 @@
+{
+  "name": "bills-app",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@10.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "start": "npm run -w apps/desktop start",
+    "deploy:mac": "turbo run deploy:mac --filter=@bills/desktop --no-cache"
+  },
+  "devDependencies": {
+    "turbo": "2.1.3"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.3.1"
+  }
+}

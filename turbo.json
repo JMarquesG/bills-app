@@ -1,0 +1,27 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "dev": { 
+      "cache": false, 
+      "persistent": true 
+    },
+    "build": { 
+      "dependsOn": ["^build"], 
+      "outputs": ["dist/**", "out/**", ".next/**", "dist-electron/**"] 
+    },
+    "start": { 
+      "cache": false 
+    },
+    "lint": {
+      "outputs": []
+    },
+    "format": {
+      "outputs": []
+    },
+    "deploy:mac": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist-electron/**"],
+      "cache": false
+    }
+  }
+}
