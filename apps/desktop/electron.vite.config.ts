@@ -28,6 +28,19 @@ export default defineConfig({
         '@': resolve(__dirname, 'src')
       }
     }
+  },
+  renderer: {
+    root: 'src/renderer',
+    build: {
+      rollupOptions: {
+        input: resolve(__dirname, 'src/renderer/index.html')
+      }
+    },
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src'),
+        '@bills/db': resolve(__dirname, '../../packages/db/dist')
+      }
+    }
   }
-  // No renderer config - using external Next.js app
 })

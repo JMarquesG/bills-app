@@ -27,3 +27,5 @@ postmaster.pid
 **/release/**
 **/test/**
 **/test/**
+apps/desktop/pgdata
+apps/desktop/pgdata/*
