@@ -5,9 +5,11 @@ export interface BillInput {
   clientId?: string
   clientName: string
   issueDate: string
+  expectedPaymentDate?: string
   amount: string
   currency?: string
   number: string
+  description?: string
   notes?: string
   source: { type: 'auto' } | { type: 'file'; path: string }
 }
@@ -42,6 +44,12 @@ const api = {
   pickDataRoot: (): Promise<ApiResponse<{ path?: string }>> =>
     ipcRenderer.invoke('folder:pickDataRoot'),
     
+  pickDataRootWithConfigCheck: (): Promise<ApiResponse<{ path?: string; hasExistingConfig?: boolean; autoLoaded?: boolean; config?: any }>> =>
+    ipcRenderer.invoke('folder:pickDataRootWithConfigCheck'),
+    
+  checkAndLoadConfig: (folderPath: string): Promise<ApiResponse<{ hasExistingConfig: boolean; config?: any; autoLoaded?: boolean }>> =>
+    ipcRenderer.invoke('folder:checkAndLoadConfig', folderPath),
+    
   pickBillsRoot: (): Promise<ApiResponse<{ path?: string }>> =>
     ipcRenderer.invoke('folder:pickBillsRoot'),
   
@@ -50,6 +58,8 @@ const api = {
   
   pickPdf: (): Promise<ApiResponse<{ path?: string }>> =>
     ipcRenderer.invoke('file:pickPdf'),
+  fileToDataUrl: (path: string): Promise<ApiResponse<{ dataUrl: string }>> =>
+    ipcRenderer.invoke('file:toDataUrl', path),
   
   ensureDir: (path: string): Promise<ApiResponse> =>
     ipcRenderer.invoke('folder:ensureDir', path),
@@ -57,6 +67,12 @@ const api = {
   // Bill operations
   createBill: (input: BillInput): Promise<ApiResponse<{ id: string; folderPath: string; filePath: string }>> =>
     ipcRenderer.invoke('bill:create', input),
+  previewBill: (input: Omit<BillInput, 'source' | 'clientId'> & { clientId?: string; expectedPaymentDate?: string; description?: string }): Promise<ApiResponse<{ dataUrl: string }>> =>
+    ipcRenderer.invoke('bill:preview', input),
+  getBill: (id: string): Promise<ApiResponse<{ bill: any }>> =>
+    ipcRenderer.invoke('bill:get', id),
+  updateBill: (input: { id: string; clientName: string; issueDate: string; expectedPaymentDate?: string; amount: string; currency?: string; number: string; description?: string; notes?: string }): Promise<ApiResponse> =>
+    ipcRenderer.invoke('bill:update', input),
   
   deleteBill: (id: string): Promise<ApiResponse> =>
     ipcRenderer.invoke('bill:delete', id),
@@ -67,9 +83,16 @@ const api = {
   // Expense operations
   addExpense: (input: ExpenseInput): Promise<ApiResponse<{ id: string }>> =>
     ipcRenderer.invoke('expense:add', input),
+  getExpense: (id: string): Promise<ApiResponse<{ expense: any }>> =>
+    ipcRenderer.invoke('expense:get', id),
+  updateExpense: (input: { id: string; vendor: string; category: string; date: string; amount: string; notes?: string; invoiceId?: string }): Promise<ApiResponse> =>
+    ipcRenderer.invoke('expense:update', input),
   
   attachExpenseFile: (expenseId: string): Promise<ApiResponse<{ filePath?: string }>> =>
     ipcRenderer.invoke('expense:attachFile', expenseId),
+
+  extractExpenseFields: (expenseId: string): Promise<ApiResponse<{ fields?: { vendor?: string; category?: string; date?: string; amount?: string; notes?: string } }>> =>
+    ipcRenderer.invoke('expense:extractFields', expenseId),
   
   deleteExpense: (id: string): Promise<ApiResponse> =>
     ipcRenderer.invoke('expense:delete', id),
@@ -119,19 +142,47 @@ const api = {
     
   // Clients
   getClients: (): Promise<ApiResponse<{ clients: Array<{ id: string; name: string; email?: string; taxId?: string; address?: string; phone?: string }> }>> =>
-    ipcRenderer.invoke('data:getClients'),
+    ipcRenderer.invoke('client:getAll'),
   createClient: (input: { name: string; email?: string; taxId?: string; address?: string; phone?: string }): Promise<ApiResponse<{ id: string }>> =>
     ipcRenderer.invoke('client:create', input),
   getClient: (id: string): Promise<ApiResponse<{ client: any }>> =>
     ipcRenderer.invoke('client:get', id),
   updateClient: (input: { id: string; name: string; email?: string; taxId?: string; address?: string; phone?: string }): Promise<ApiResponse> =>
     ipcRenderer.invoke('client:update', input),
+  hideClient: (id: string): Promise<ApiResponse> =>
+    ipcRenderer.invoke('client:hide', id),
+  deleteClient: (id: string): Promise<ApiResponse> =>
+    ipcRenderer.invoke('client:delete', id),
   
   // Company profile (my data)
   getCompanyProfile: (): Promise<ApiResponse<{ profile: any }>> =>
     ipcRenderer.invoke('settings:getCompanyProfile'),
   saveCompanyProfile: (profile: any): Promise<ApiResponse> =>
     ipcRenderer.invoke('settings:saveCompanyProfile', profile),
+
+  // SMTP configuration
+  getSmtpConfig: (): Promise<ApiResponse<{ config: any }>> =>
+    ipcRenderer.invoke('settings:getSmtpConfig'),
+  saveSmtpConfig: (config: any): Promise<ApiResponse> =>
+    ipcRenderer.invoke('settings:saveSmtpConfig', config),
+
+  // Email operations
+  sendInvoiceEmail: (data: { billId: string; subject: string; htmlBody: string; attachmentPath?: string }): Promise<ApiResponse> =>
+    ipcRenderer.invoke('email:sendInvoice', data),
+
+  // Automation operations
+  getAutomationRules: (): Promise<ApiResponse<{ rules: any[] }>> =>
+    ipcRenderer.invoke('automation:getRules'),
+  createAutomationRule: (rule: any): Promise<ApiResponse<{ id: string }>> =>
+    ipcRenderer.invoke('automation:createRule', rule),
+  updateAutomationRule: (rule: any): Promise<ApiResponse> =>
+    ipcRenderer.invoke('automation:updateRule', rule),
+  deleteAutomationRule: (id: string): Promise<ApiResponse> =>
+    ipcRenderer.invoke('automation:deleteRule', id),
+  toggleAutomationRule: (id: string): Promise<ApiResponse> =>
+    ipcRenderer.invoke('automation:toggleRule', id),
+  getDueAutomationRules: (): Promise<ApiResponse<{ rules: any[] }>> =>
+    ipcRenderer.invoke('automation:getDueRules'),
 
   // Debug operations
   checkConfigFile: (): Promise<ApiResponse> =>

@@ -14,7 +14,7 @@ nsis:
   installerHeaderIcon: build/icon.ico
   createDesktopShortcut: always
 mac:
-  icon: build/icon.icns
+  icon: src/renderer/logo.png
   target:
     - target: dmg
       arch:

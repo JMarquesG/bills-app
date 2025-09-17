@@ -12,15 +12,16 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 w-full bg-background border-b border-border">
-      <div className="container mx-auto flex h-16 items-center px-6">
+      <div className="flex h-16 items-center px-6 w-full max-w-none">
         <div className="mr-8 flex items-center">
-          <img src="/logo.png" alt="Logo" className="h-8 w-8" />
+          <img src="/logo.png" alt="Logo" className="h-12 w-12" />
         </div>
         <nav className="flex items-center space-x-6">
           <Link to="/dashboard" className={navItemClass(isActive('/dashboard'))}>Dashboard</Link>
           <Link to="/clients" className={navItemClass(isActive('/clients'))}>Clients</Link>
-          <Link to="/bills" className={navItemClass(isActive('/bills'))}>Orders</Link>
-          <Link to="/expenses" className={navItemClass(isActive('/expenses'))}>Products</Link>
+          <Link to="/bills" className={navItemClass(isActive('/bills'))}>Income</Link>
+          <Link to="/expenses" className={navItemClass(isActive('/expenses'))}>Expenses</Link>
+          <Link to="/automation" className={navItemClass(isActive('/automation'))}>Automation</Link>
         </nav>
         <div className="ml-auto flex items-center space-x-4">
           <Link to="/settings" className="p-2 rounded-lg hover:bg-secondary transition-colors">

@@ -6,6 +6,7 @@ export const bootstrapSQL = `
     email text,
     address text,
     phone text,
+    hidden boolean default false,
     tax_id text,
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
@@ -17,11 +18,13 @@ export const bootstrapSQL = `
     client_id text not null references client(id),
     issue_date date not null,
     due_date date,
+    expected_payment_date date,
     amount numeric(12,2) not null,
     currency text default 'EUR',
     status text default 'DRAFT',
     file_path text,
     folder_path text,
+    description text,
     notes text,
     paid_at timestamp,
     created_at timestamp default current_timestamp,
@@ -50,36 +53,27 @@ export const bootstrapSQL = `
     filename_tpl text,
     security text, -- JSON string: { hasPassword: boolean, salt: string, hash: string } or null
     company_profile text, -- JSON string: seller profile (name, address, tax ids, bank)
+    smtp_config text, -- JSON string: { host: string, port: number, secure: boolean, user: string, password: string } or null
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
   );
 
-  -- Add missing columns to existing installations
-  do $$
-  begin
-    if not exists (select 1 from information_schema.columns where table_name = 'setting' and column_name = 'expenses_root') then
-      alter table setting add column expenses_root text;
-    end if;
-    
-    if not exists (select 1 from information_schema.columns where table_name = 'setting' and column_name = 'security') then
-      alter table setting add column security text;
-    end if;
-    
-    if not exists (select 1 from information_schema.columns where table_name = 'setting' and column_name = 'data_root') then
-      alter table setting add column data_root text;
-    end if;
+  create table if not exists automation_rule (
+    id text primary key,
+    client_id text not null references client(id),
+    name text not null,
+    day_of_month integer not null check (day_of_month >= 1 and day_of_month <= 31),
+    amount numeric(12,2) not null,
+    currency text default 'EUR',
+    description text not null,
+    subject_template text not null,
+    body_template text not null,
+    cc_emails text, -- JSON array of CC email addresses
+    is_active boolean default true,
+    last_sent_date date,
+    next_due_date date,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp
+  );
 
-    if not exists (select 1 from information_schema.columns where table_name = 'setting' and column_name = 'company_profile') then
-      alter table setting add column company_profile text;
-    end if;
-
-    if not exists (select 1 from information_schema.columns where table_name = 'client' and column_name = 'address') then
-      alter table client add column address text;
-    end if;
-    if not exists (select 1 from information_schema.columns where table_name = 'client' and column_name = 'phone') then
-      alter table client add column phone text;
-    end if;
-  exception when others then
-    -- Ignore errors (PGlite might not support all information_schema features)
-  end $$;
 `;

@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs'
 import { is } from '@electron-toolkit/utils'
 import { initDb } from '@bills/db'
 import './ipc'
+import { startAutomationScheduler, stopAutomationScheduler } from './automation-scheduler'
 
 function createWindow(): void {
   // Create the browser window.
@@ -44,16 +45,22 @@ app.whenReady().then(async () => {
     console.log('🚀 Electron app ready, initializing database...')
     // Resolve DB directory for prod vs dev
     const dbDir = is.dev
-      ? (process.env.DB_DIR || join(process.cwd(), 'pgdata'))
+      ? (process.env.DB_DIR || join(__dirname, '../pgdata'))  // Use __dirname for better path resolution
       : join(app.getPath('userData'), 'pgdata')
     await fs.mkdir(dbDir, { recursive: true })
     process.env.DB_DIR = dbDir
     console.log('📦 Using DB dir:', dbDir)
-    // Initialize database
+    
+    // Initialize database with better error handling
     await initDb()
     console.log('✅ Database initialized successfully')
+    
+    // Start automation scheduler
+    startAutomationScheduler()
   } catch (error) {
     console.error('❌ Database initialization failed:', error)
+    // Don't prevent app from starting - user can reconfigure if needed
+    console.log('⚠️ App will continue without fully initialized database')
   }
   
   console.log('📱 Creating window...')
@@ -70,4 +77,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// Clean up when app is quitting
+app.on('will-quit', () => {
+  stopAutomationScheduler()
 })
