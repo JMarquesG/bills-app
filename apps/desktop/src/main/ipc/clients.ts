@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { client } from '@bills/db'
+import { generateId } from './utils'
 
 const createClientSchema = z.object({
   name: z.string().min(1),
@@ -20,9 +20,6 @@ const updateClientSchema = z.object({
   phone: z.string().optional().or(z.literal(''))
 })
 
-function generateId(): string {
-  return createHash('md5').update(Date.now().toString() + Math.random().toString()).digest('hex').substring(0, 8)
-}
 
 // Get all clients
 ipcMain.handle('client:getAll', async () => {

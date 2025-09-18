@@ -7,4 +7,13 @@ export function generateId(): string {
 		.substring(0, 8)
 }
 
+export function createError(code: string, error: unknown): { error: { code: string; message: string } } {
+	return {
+		error: {
+			code,
+			message: error instanceof Error ? error.message : 'Unknown error'
+		}
+	}
+}
+
 

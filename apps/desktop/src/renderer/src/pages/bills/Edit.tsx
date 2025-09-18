@@ -141,6 +141,13 @@ export default function EditBillPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrors([])
+
+    // Show warning before proceeding with edit
+    const confirmed = window.confirm('Si editamos la factura, la anterior será eliminada, ¿estás seguro?')
+    if (!confirmed) {
+      return
+    }
+
     setLoading(true)
 
     try {

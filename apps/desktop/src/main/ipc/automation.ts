@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
-import { createHash } from 'node:crypto'
 import { client } from '@bills/db'
+import { generateId } from './utils'
 
 const automationRuleSchema = z.object({
   clientId: z.string().min(1),
@@ -20,9 +20,6 @@ const updateAutomationRuleSchema = automationRuleSchema.extend({
   id: z.string().min(1)
 })
 
-function generateId(): string {
-  return createHash('md5').update(Date.now().toString() + Math.random().toString()).digest('hex').substring(0, 8)
-}
 
 // Get all automation rules
 ipcMain.handle('automation:getRules', async () => {

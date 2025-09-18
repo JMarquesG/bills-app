@@ -2,14 +2,13 @@ import { ipcMain } from 'electron'
 import { createHash, randomBytes, scrypt } from 'node:crypto'
 import { promisify } from 'node:util'
 import { client } from '@bills/db'
+import { setSessionKeyFromPassword, clearSessionKey } from '../secrets'
 
 const scryptAsync = promisify(scrypt)
 
 ipcMain.handle('app:getStatus', async () => {
   try {
-    console.log('📡 IPC: app:getStatus called')
     const result = await client.query('SELECT data_root, bills_root, expenses_root, security FROM setting WHERE id = 1')
-    console.log('📊 Query result:', result.rows)
     const row = result.rows[0] as { data_root?: string; bills_root?: string; expenses_root?: string; security?: string } | undefined
     
     // Check if we have configuration - prefer data_root, fallback to legacy
@@ -57,6 +56,11 @@ ipcMain.handle('auth:setPassword', async (_, plainPassword: string | null) => {
         salt,
         hash: (hash as Buffer).toString('hex')
       })
+      // derive session key immediately
+      console.log('🔐 Setting session key for new password setup...')
+      setSessionKeyFromPassword(plainPassword, salt)
+      const { hasSessionKey } = await import('../secrets')
+      console.log('🔐 Session key set after password setup?', hasSessionKey())
     }
     
     // Upsert setting row
@@ -68,6 +72,9 @@ ipcMain.handle('auth:setPassword', async (_, plainPassword: string | null) => {
         updated_at = current_timestamp
     `, [securityData])
     
+    if (!plainPassword) {
+      clearSessionKey()
+    }
     return { ok: true }
   } catch (error) {
     return { error: { code: 'SET_PASSWORD_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
@@ -108,6 +115,15 @@ ipcMain.handle('auth:changePassword', async (_, currentPassword: string, newPass
         salt: newSalt,
         hash: (newHash as Buffer).toString('hex')
       })
+      console.log('🔐 Setting session key for new password...')
+      setSessionKeyFromPassword(newPassword, newSalt)
+      const { hasSessionKey } = await import('../secrets')
+      console.log('🔐 Session key set after password change?', hasSessionKey())
+    } else {
+      // Password is being removed, clear session key
+      console.log('🔐 Password being removed, clearing session key...')
+      const { clearSessionKey } = await import('../secrets')
+      clearSessionKey()
     }
     
     await client.query(`
@@ -122,23 +138,34 @@ ipcMain.handle('auth:changePassword', async (_, currentPassword: string, newPass
 
 ipcMain.handle('auth:verifyPassword', async (_, plainPassword: string) => {
   try {
+    console.log('🔐 Verifying password...')
     const result = await client.query('SELECT security FROM setting WHERE id = 1')
     const row = result.rows[0] as { security?: string } | undefined
     
     if (!row?.security) {
+      console.log('🔐 No security config found')
       return { valid: false }
     }
     
     const security = JSON.parse(row.security)
     if (!security.hasPassword || !security.salt || !security.hash) {
+      console.log('🔐 Invalid security config')
       return { valid: false }
     }
     
     const hash = await scryptAsync(plainPassword, security.salt, 32)
     const isValid = (hash as Buffer).toString('hex') === security.hash
+    console.log('🔐 Password valid?', isValid)
+  if (isValid) {
+    console.log('🔐 Setting session key from password')
+    setSessionKeyFromPassword(plainPassword, security.salt)
+    const { hasSessionKey } = await import('../secrets')
+    console.log('🔐 Session key set successfully?', hasSessionKey())
+  }
     
     return { valid: isValid }
   } catch (error) {
+    console.error('🔐 Verify password error:', error)
     return { error: { code: 'VERIFY_PASSWORD_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
   }
 })

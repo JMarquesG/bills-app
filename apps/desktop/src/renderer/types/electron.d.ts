@@ -76,6 +76,9 @@ declare global {
       getDataRoot: () => Promise<ApiResponse<{ path: string | null }>>
       getBillsRoot: () => Promise<ApiResponse<{ path: string | null }>>
       getExpensesRoot: () => Promise<ApiResponse<{ path: string | null }>>
+      // OpenAI Key management
+      getOpenAIKey: () => Promise<ApiResponse<{ key: string | null }>>
+      saveOpenAIKey: (apiKey: string) => Promise<ApiResponse>
       
       // System operations
       openPath: (path: string) => Promise<ApiResponse>

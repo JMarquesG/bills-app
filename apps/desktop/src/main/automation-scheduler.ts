@@ -1,11 +1,11 @@
 import * as cron from 'node-cron'
-import { createHash } from 'node:crypto'
 import { client } from '@bills/db'
 import { generateInvoicePdf } from './pdf'
 import nodemailer from 'nodemailer'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { promises as fs } from 'node:fs'
+import { generateId } from './ipc/utils'
 
 interface AutomationRule {
   id: string
@@ -24,9 +24,6 @@ interface AutomationRule {
 
 let schedulerTask: cron.ScheduledTask | null = null
 
-function generateId(): string {
-  return createHash('md5').update(Date.now().toString() + Math.random().toString()).digest('hex').substring(0, 8)
-}
 
 async function getSmtpConfig(): Promise<any> {
   try {

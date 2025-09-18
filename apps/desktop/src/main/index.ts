@@ -13,6 +13,10 @@ function createWindow(): void {
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    // Custom title bar configuration
+    titleBarStyle: 'hidden',
+    // Expose window controls on Windows/Linux
+    ...(process.platform !== 'darwin' ? { titleBarOverlay: true } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -38,6 +42,11 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
+
+// Memory optimization for WASM modules
+app.commandLine.appendSwitch('max-old-space-size', '4096'); // Increase heap size
+app.commandLine.appendSwitch('max-semi-space-size', '128'); // Optimize garbage collection
+app.commandLine.appendSwitch('js-flags', '--expose-gc'); // Enable manual GC
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {

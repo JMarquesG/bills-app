@@ -28,6 +28,10 @@ export default function SettingsPage() {
   })
   const [smtpLoading, setSmtpLoading] = useState(false)
 
+  // OpenAI key state
+  const [openAiKey, setOpenAiKey] = useState('')
+  const [openAiLoading, setOpenAiLoading] = useState(false)
+
   useEffect(() => {
     loadCurrentSettings()
   }, [])
@@ -48,6 +52,17 @@ export default function SettingsPage() {
       const smtpResult = await window.api.getSmtpConfig()
       if (!smtpResult.error && smtpResult.config) {
         setSmtpConfig(smtpResult.config)
+      }
+
+      // Load OpenAI key (requires unlock)
+      console.log('🔑 Loading OpenAI key in settings...')
+      const keyResult = await window.api.getOpenAIKey()
+      console.log('🔑 Key result:', keyResult)
+      if (!keyResult.error) {
+        setOpenAiKey(keyResult.key || '')
+        console.log('🔑 Key loaded, length:', keyResult.key?.length || 0)
+      } else {
+        console.log('🔑 Error loading key:', keyResult.error)
       }
     } catch (error) {
       setErrors(['Failed to load settings'])
@@ -182,6 +197,32 @@ export default function SettingsPage() {
       ...prev,
       [field]: value
     }))
+  }
+
+  const handleSaveOpenAIKey = async (e: React.FormEvent) => {
+    e.preventDefault()
+    console.log('🔑 Saving OpenAI key in UI...')
+    setOpenAiLoading(true)
+    setErrors([])
+    try {
+      if (!window.api) return
+      console.log('🔑 Calling saveOpenAIKey API with key length:', openAiKey.trim().length)
+      const res = await window.api.saveOpenAIKey(openAiKey.trim())
+      console.log('🔑 Save result:', res)
+      if (res.error) {
+        console.log('🔑 Save error:', res.error)
+        setErrors([res.error.message])
+      } else {
+        console.log('🔑 Save successful')
+        setSuccess('OpenAI key saved securely')
+        setTimeout(() => setSuccess(null), 3000)
+      }
+    } catch (error) {
+      console.error('🔑 Save exception:', error)
+      setErrors(['Failed to save OpenAI key'])
+    } finally {
+      setOpenAiLoading(false)
+    }
   }
 
   if (loading) {
@@ -359,6 +400,39 @@ export default function SettingsPage() {
               </div>
             </form>
           )}
+        </div>
+
+        {/* OpenAI API Key */}
+        <div className="apple-card bg-card p-6">
+          <h2 className="text-xl font-semibold mb-4 text-card-foreground">
+            OpenAI API Key
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Used for AI-powered autofill of expense forms. The key is encrypted with your app password and stored locally.
+          </p>
+          <form onSubmit={handleSaveOpenAIKey} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-card-foreground mb-1">
+                API Key
+              </label>
+              <input
+                type="password"
+                value={openAiKey}
+                onChange={(e) => setOpenAiKey(e.target.value)}
+                placeholder="sk-..."
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={openAiLoading || !openAiKey.trim()}
+                className="btn btn-primary"
+              >
+                {openAiLoading ? 'Saving...' : 'Save OpenAI Key'}
+              </button>
+            </div>
+          </form>
         </div>
 
         {/* SMTP Email Configuration */}

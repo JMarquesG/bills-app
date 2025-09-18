@@ -21,6 +21,7 @@ export default function NewBillPage() {
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([])
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
+  const [extracting, setExtracting] = useState(false)
 
   // Auto-generate invoice number
   const generateInvoiceNumber = () => {
@@ -173,6 +174,39 @@ export default function NewBillPage() {
     }
   }
 
+  const handleAutofillFromFile = async () => {
+    if (!window.api || !pickedFile) return
+
+    setExtracting(true)
+    setErrors([])
+    try {
+      const res = await window.api.extractBillFields(pickedFile)
+      if (res.error) {
+        setErrors([res.error.message])
+        setExtracting(false)
+        return
+      }
+      const fields = (res as any).fields as Partial<typeof formData> | undefined
+      if (fields) {
+        setFormData(prev => ({
+          ...prev,
+          clientName: fields.clientName ?? prev.clientName,
+          issueDate: fields.issueDate ?? prev.issueDate,
+          expectedPaymentDate: fields.expectedPaymentDate ?? prev.expectedPaymentDate,
+          amount: fields.amount ?? prev.amount,
+          currency: fields.currency ?? prev.currency,
+          number: fields.number ?? prev.number,
+          description: fields.description ?? prev.description,
+          notes: fields.notes ?? prev.notes
+        }))
+        alert('Form fields updated using AI document analysis.')
+      }
+    } catch (e) {
+      setErrors(['Failed to extract fields from file'])
+    }
+    setExtracting(false)
+  }
+
   return (
     <div className="min-h-screen bg-background p-6">
       <PageHeader title="New Bill" subtitle="Create a new invoice for your client" />
@@ -309,6 +343,20 @@ export default function NewBillPage() {
               {pdfSource === 'file' && (
                 <div className="mt-3 flex items-center gap-3">
                   <button type="button" onClick={pickPdf} className="btn btn-secondary btn-sm">Pick PDF</button>
+                  {pickedFile && (
+                    <button 
+                      type="button" 
+                      onClick={handleAutofillFromFile}
+                      className="btn btn-outline btn-sm"
+                      disabled={extracting}
+                      title="Analyze the selected PDF with AI to extract bill details"
+                    >
+                      <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      {extracting ? 'AI Analyzing...' : 'AI Extract Fields'}
+                    </button>
+                  )}
                   <span className="text-sm text-muted-foreground truncate max-w-[60ch]">{pickedFile || 'No file selected'}</span>
                 </div>
               )}

@@ -18,16 +18,57 @@ function getDbDir(): string {
 export function getClient(): PGlite {
   if (!_client) {
     console.log('🗄️ Initializing PGlite client with dir:', getDbDir());
-    _client = new PGlite(getDbDir());
+    try {
+      // Try to clean up any existing WASM memory first
+      if (global.gc) {
+        global.gc();
+      }
+      
+      _client = new PGlite(getDbDir());
+      
+      console.log('✅ PGlite client initialized successfully');
+    } catch (error) {
+      console.error('❌ Failed to create PGlite client:', error);
+      
+      // Clean up on any error
+      _client = null;
+      _db = null;
+      _isInitialized = false;
+      
+      // Force garbage collection to clean up any WASM memory
+      if (global.gc) {
+        global.gc();
+      }
+      
+      // If it's a WASM abort, try once more with a clean slate
+      if (error instanceof Error && error.message.includes('Aborted')) {
+        console.log('🔄 WASM abort detected, attempting recovery in 2 seconds...');
+        
+        // Wait longer for WASM cleanup
+        setTimeout(() => {
+          console.log('🔄 Attempting PGlite recovery...');
+          try {
+            if (global.gc) {
+              global.gc();
+            }
+            _client = new PGlite(getDbDir());
+            console.log('✅ PGlite client recovered successfully');
+          } catch (retryError) {
+            console.error('❌ PGlite recovery failed:', retryError);
+          }
+        }, 2000);
+      }
+      
+      throw error;
+    }
   }
   return _client;
 }
 
 export function getDb(): any {
-  if (!_db) {
-    _db = drizzle({ client: getClient() });
-  }
-  return _db;
+  // Temporarily disable Drizzle to resolve compatibility issues
+  // Just return the raw client for now
+  return getClient();
 }
 
 // Direct exports instead of proxies to avoid private field issues
@@ -38,6 +79,25 @@ export const client = {
   close: () => getClient().close(),
   // Add other commonly used PGlite methods as needed
 };
+
+// Reset function for recovery from WASM errors
+export function resetConnection() {
+  console.log('🔄 Resetting database connection...');
+  try {
+    if (_client) {
+      _client.close();
+    }
+  } catch (error) {
+    console.log('ℹ️ Error closing client (expected):', error);
+  }
+  _client = null;
+  _db = null;
+  _isInitialized = false;
+  if (global.gc) {
+    global.gc();
+  }
+  console.log('✅ Database connection reset complete');
+}
 
 // Export the db getter for Drizzle usage
 export const db = getDb;
@@ -82,20 +142,21 @@ export async function initDb() {
     _client = null;
     _db = null;
     
-    // If it's a connectivity issue, wait a moment and retry once
-    if (error instanceof Error && (error.message.includes('Aborted') || error.message.includes('runtime'))) {
-      console.log('🔄 Retrying database initialization after 2 seconds...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
+    // If it's a WASM/connectivity issue, reset and retry once
+    if (error instanceof Error && (error.message.includes('Aborted') || error.message.includes('runtime') || error.message.includes('WASM'))) {
+      console.log('🔄 WASM/Runtime error detected, resetting connection and retrying...');
+      resetConnection();
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait longer for WASM cleanup
       try {
+        console.log('🔄 Attempting database retry after reset...');
         const retryClient = getClient();
         await retryClient.exec(bootstrapSQL);
-        console.log('✅ Database schema initialized on retry');
+        console.log('✅ Database schema initialized on retry after reset');
         _isInitialized = true;
         return;
       } catch (retryError) {
-        console.error('❌ Database retry failed:', retryError);
-        _client = null;
-        _db = null;
+        console.error('❌ Database retry failed after reset:', retryError);
+        resetConnection();
       }
     }
     throw error;
@@ -143,6 +204,28 @@ async function runSimpleMigrations() {
       } catch (fallbackError) {
         console.log('ℹ️ Could not update expected payment dates - this is normal for new installations');
       }
+    }
+
+    // Add cc_emails column to automation_rule if missing
+    try {
+      const currentClient = getClient();
+      await currentClient.query(`
+        ALTER TABLE automation_rule ADD COLUMN IF NOT EXISTS cc_emails text;
+      `);
+      console.log('✅ Ensured cc_emails column exists on automation_rule');
+    } catch (error) {
+      console.log('ℹ️ Could not add cc_emails column - likely already exists');
+    }
+
+    // Add openai_key column to setting if missing
+    try {
+      const currentClient = getClient();
+      await currentClient.query(`
+        ALTER TABLE setting ADD COLUMN IF NOT EXISTS openai_key text;
+      `);
+      console.log('✅ Ensured openai_key column exists on setting');
+    } catch (error) {
+      console.log('ℹ️ Could not add openai_key column - likely already exists');
     }
     
   } catch (error) {

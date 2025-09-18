@@ -51,6 +51,8 @@ export default function ExpensesPage() {
   }, [editingExpense])
 
   const startEdit = (expense: Expense) => {
+    // Open the form immediately and populate fields
+    setShowForm(true)
     setEditingExpense(expense)
     setError(null)
   }
@@ -135,10 +137,41 @@ export default function ExpensesPage() {
 
 
   const handleAttachFile = async () => {
-    if (!window.api || !editingExpense) return
+    if (!window.api) return
 
     try {
-      const result = await window.api.attachExpenseFile(editingExpense.id)
+      // If we're creating a new expense, create it first so we have an ID
+      let expenseId = editingExpense?.id
+      if (!expenseId) {
+        const addRes = await window.api.addExpense({
+          vendor: formData.vendor.trim() || 'Unknown Vendor',
+          category: formData.category.trim() || 'Other',
+          date: formData.date,
+          amount: formData.amount.trim() || '0',
+          notes: formData.notes.trim() || undefined
+        })
+        if (addRes.error || !addRes.id) {
+          setError(addRes.error?.message || 'Failed to create expense before attaching file')
+          return
+        }
+        expenseId = addRes.id
+        // Reflect creation in local state
+        setEditingExpense(prev => prev || ({
+          id: expenseId!,
+          vendor: formData.vendor,
+          category: formData.category,
+          date: formData.date,
+          amount: formData.amount,
+          currency: 'EUR',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        } as unknown as Expense))
+        setShowForm(true)
+        // Refresh list so the new expense appears
+        fetchExpenses()
+      }
+
+      const result = await window.api.attachExpenseFile(expenseId!)
       
       if (result.error) {
         setError(result.error.message)
@@ -147,16 +180,15 @@ export default function ExpensesPage() {
       
       if (!result.canceled && result.filePath) {
         // Update the editing expense with the new file path
-        setEditingExpense(prev => prev ? { ...prev, filePath: result.filePath } : null)
+        setEditingExpense(prev => prev ? { ...prev, filePath: result.filePath } : prev)
         
         // Update the expenses list
         setExpenses(prev => prev.map(e => 
-          e.id === editingExpense.id 
-            ? { ...e, filePath: result.filePath }
+          e.id === expenseId 
+            ? { ...e, filePath: result.filePath as string }
             : e
         ))
         
-        // Show success message
         alert('File attached successfully!')
       }
     } catch (error) {
@@ -185,7 +217,7 @@ export default function ExpensesPage() {
           amount: fields.amount ?? prev.amount,
           notes: fields.notes ?? prev.notes
         }))
-        alert('Form fields updated from the attached file.')
+        alert('Form fields updated using AI document analysis.')
       }
     } catch (e) {
       setError('Failed to extract fields from file')
@@ -357,7 +389,7 @@ export default function ExpensesPage() {
 
             <div className="flex gap-3 pt-2 border-t  mt-4">
               <button type="button" onClick={cancelForm} className="btn btn-secondary btn-lg">Cancel</button>
-              {editingExpense && (
+              {
                 <button 
                   type="button" 
                   onClick={handleAttachFile}
@@ -368,19 +400,19 @@ export default function ExpensesPage() {
                   </svg>
                   Attach File
                 </button>
-              )}
+              }
               {editingExpense && editingExpense.filePath && (
                 <button 
                   type="button" 
                   onClick={handleAutofillFromFile}
                   className="btn btn-outline btn-lg"
                   disabled={extracting}
-                  title="Extract fields from the attached document"
+                  title="Analyze the attached document with AI to extract expense details"
                 >
                   <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20h9M12 4h9M4 8h16M4 16h16M4 12h8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  {extracting ? 'Autofilling...' : 'Autofill from file'}
+                  {extracting ? 'AI Analyzing...' : 'AI Extract Fields'}
                 </button>
               )}
               <button
@@ -466,15 +498,6 @@ export default function ExpensesPage() {
                   </td>
                   <td className="p-3">
                     <div className="flex gap-2">
-                      <button 
-                        className="btn btn-outline btn-sm"
-                        onClick={() => startEdit(expense)}
-                      >
-                        <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                        Edit
-                      </button>
                       {expense.filePath && (
                         <button 
                           className="btn btn-outline btn-sm"

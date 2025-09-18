@@ -205,7 +205,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPIs - Live Summary Cards */}
-      <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 mb-8">
+      <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 mb-8">
         <div className="dashboard-card p-5">
           <div className="flex items-start justify-between">
             <div className="flex-1">

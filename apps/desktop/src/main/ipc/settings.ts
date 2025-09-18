@@ -2,7 +2,8 @@ import { ipcMain, dialog, app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { z } from 'zod'
-import { client } from '@bills/db'
+import { client, resetConnection } from '@bills/db'
+import { encryptSecret, decryptSecret, hasSessionKey } from '../secrets'
 
 const companyProfileSchema = z.object({
   name: z.string().optional(),
@@ -22,6 +23,10 @@ const smtpConfigSchema = z.object({
   secure: z.boolean(),
   user: z.string().min(1),
   password: z.string().min(1)
+})
+
+const openAiKeySchema = z.object({
+  apiKey: z.string().min(10)
 })
 
 // Helper functions
@@ -427,47 +432,6 @@ ipcMain.handle('settings:saveCompanyProfile', async (_e, profile: unknown) => {
   }
 })
 
-// Test handler to verify config file creation
-ipcMain.handle('debug:checkConfigFile', async () => {
-  try {
-    const configPath = await getConfigPath()
-    const dataRoot = await getDataRoot()
-    
-    let mainConfigExists = false
-    let dataConfigExists = false
-    let mainConfigContent = null
-    let dataConfigContent = null
-    
-    try {
-      await fs.access(configPath)
-      mainConfigExists = true
-      const content = await fs.readFile(configPath, 'utf-8')
-      mainConfigContent = JSON.parse(content)
-    } catch (error) {
-      console.log('Main config file not found:', configPath)
-    }
-    
-    if (dataRoot) {
-      try {
-        const dataConfigPath = join(dataRoot, 'bills-app.config.json')
-        await fs.access(dataConfigPath)
-        dataConfigExists = true
-        const content = await fs.readFile(dataConfigPath, 'utf-8')
-        dataConfigContent = JSON.parse(content)
-      } catch (error) {
-        console.log('Data config file not found in:', dataRoot)
-      }
-    }
-    
-    return {
-      mainConfig: { exists: mainConfigExists, path: configPath, content: mainConfigContent },
-      dataConfig: { exists: dataConfigExists, path: dataRoot ? join(dataRoot, 'bills-app.config.json') : null, content: dataConfigContent },
-      dataRoot
-    }
-  } catch (error) {
-    return { error: { code: 'CHECK_CONFIG_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
-  }
-})
 
 // New functions for handling existing config files
 async function loadConfigFromFolder(folderPath: string): Promise<{ version: string; dataRoot: string; billsFolder: string; expensesFolder: string; lastUpdated: string } | null> {
@@ -636,5 +600,132 @@ ipcMain.handle('settings:saveSmtpConfig', async (_e, config: unknown) => {
     return { error: { code: 'SAVE_SMTP_CONFIG_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
   }
 })
+
+// OpenAI API key secure storage
+ipcMain.handle('settings:getOpenAIKey', async () => {
+  try {
+    console.log('🔑 Getting OpenAI key from database...')
+    const result = await client.query('SELECT openai_key FROM setting WHERE id = 1')
+    const text = (result.rows?.[0] as any)?.openai_key as string | undefined
+    console.log('🔑 Key from DB:', text ? 'Found key data' : 'No key found')
+    if (!text) return { key: null }
+    
+    const payload = JSON.parse(text)
+    console.log('🔑 Key payload structure:', Object.keys(payload))
+    
+    if (payload.encrypted === false) {
+      // Plain text storage (no password set)
+      console.log('🔑 Key stored as plain text, returning directly')
+      return { key: payload.plainText }
+    } else if (payload.encrypted === true) {
+      // Encrypted storage (password was set)
+      console.log('🔑 Key is encrypted, checking session key...')
+      console.log('🔑 Has session key?', hasSessionKey())
+      if (!hasSessionKey()) {
+        return { error: { code: 'LOCKED', message: 'Unlock with password to access AI key' } }
+      }
+      const plain = decryptSecret(payload.iv, payload.cipherText)
+      console.log('🔑 Decrypted key length:', plain?.length || 0)
+      return { key: plain }
+    } else {
+      // Legacy format (old encrypted format without explicit flag)
+      console.log('🔑 Legacy encrypted format detected')
+      if (!hasSessionKey()) {
+        return { error: { code: 'LOCKED', message: 'Unlock with password to access AI key' } }
+      }
+      const plain = decryptSecret(payload.iv, payload.cipherText)
+      console.log('🔑 Decrypted legacy key length:', plain?.length || 0)
+      return { key: plain }
+    }
+  } catch (error) {
+    console.error('🔑 Get key error:', error)
+    return { error: { code: 'GET_OPENAI_KEY_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
+  }
+})
+
+ipcMain.handle('settings:saveOpenAIKey', async (_e, data: unknown) => {
+  try {
+    console.log('🔑 Saving OpenAI key...')
+    console.log('🔑 Raw data received:', data)
+    
+    const parsed = openAiKeySchema.parse(data)
+    console.log('🔑 Parsed key length:', parsed.apiKey.length)
+    
+    // Check if we have a session key for encryption
+    const hasSession = hasSessionKey()
+    console.log('🔑 Has session key?', hasSession)
+    
+    let text: string
+    if (hasSession) {
+      // Encrypt the key if we have a session key
+      console.log('🔑 Session key available, encrypting...')
+      const enc = encryptSecret(parsed.apiKey)
+      text = JSON.stringify({ encrypted: true, ...enc })
+      console.log('🔑 Encrypted key structure:', Object.keys(enc))
+    } else {
+      // Store as plain text if no password is set
+      console.log('🔑 No session key, storing as plain text...')
+      text = JSON.stringify({ encrypted: false, plainText: parsed.apiKey })
+    }
+    
+    console.log('🔑 JSON length to store:', text.length)
+    
+    // Check database structure first
+    console.log('🔑 Checking database structure...')
+    const tableCheck = await client.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'setting'
+    `)
+    console.log('🔑 Table columns:', tableCheck.rows)
+    
+    // Check current setting row
+    const currentRow = await client.query('SELECT * FROM setting WHERE id = 1')
+    console.log('🔑 Current setting row:', currentRow.rows)
+    
+    const now = new Date().toISOString()
+    
+    // First ensure the row exists
+    let rowExists = false
+    try {
+      const existsCheck = await client.query('SELECT id FROM setting WHERE id = 1')
+      rowExists = existsCheck.rows && existsCheck.rows.length > 0
+      console.log('🔑 Row exists?', rowExists)
+    } catch (e) {
+      console.log('🔑 Error checking row existence:', e)
+    }
+    
+    if (!rowExists) {
+      // Insert new row
+      console.log('🔑 Inserting new setting row...')
+      await client.query(`
+        INSERT INTO setting (id, openai_key, created_at, updated_at) 
+        VALUES (1, $1, $2, $2)
+      `, [text, now])
+      console.log('🔑 New row inserted')
+    } else {
+      // Update existing row
+      console.log('🔑 Updating existing row...')
+      await client.query(`
+        UPDATE setting 
+        SET openai_key = $1, updated_at = $2 
+        WHERE id = 1
+      `, [text, now])
+      console.log('🔑 Row updated')
+    }
+    
+    // Verify it was saved
+    const verifyRes = await client.query('SELECT openai_key FROM setting WHERE id = 1')
+    const savedKey = (verifyRes.rows?.[0] as any)?.openai_key
+    console.log('🔑 Verification - key saved?', !!savedKey)
+    console.log('🔑 Saved key preview:', savedKey ? savedKey.substring(0, 50) + '...' : 'NULL')
+    
+    return { ok: true }
+  } catch (error) {
+    console.error('🔑 Save error:', error)
+    return { error: { code: 'SAVE_OPENAI_KEY_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
+  }
+})
+
 
 export { getDataRoot, getBillsFolder, getExpensesFolder, ensureDirectoryExists, loadConfigFromFolder }

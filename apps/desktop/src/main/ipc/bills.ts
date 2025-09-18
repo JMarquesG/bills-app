@@ -1,11 +1,11 @@
 import { ipcMain, app } from 'electron'
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
-import { createHash } from 'node:crypto'
+import { join, extname } from 'node:path'
 import { z } from 'zod'
 import { client } from '@bills/db'
 import { generateInvoicePdf } from '../pdf'
 import { getDataRoot, getBillsFolder, ensureDirectoryExists } from './settings'
+import { generateId } from './utils'
 
 // Input schemas for validation
 const createBillSchema = z.object({
@@ -48,9 +48,6 @@ const updateBillSchema = z.object({
   notes: z.string().optional()
 })
 
-function generateId(): string {
-  return createHash('md5').update(Date.now().toString() + Math.random().toString()).digest('hex').substring(0, 8)
-}
 
 // Generate a temporary PDF preview (auto format) and return a data URL
 ipcMain.handle('bill:preview', async (_e, input) => {
@@ -343,5 +340,234 @@ ipcMain.handle('bill:updateStatus', async (_, billId: string, status: string) =>
     return { ok: true }
   } catch (error) {
     return { error: { code: 'UPDATE_STATUS_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
+  }
+})
+
+// Extract fields from a bill file using AI
+const ExtractedBillFieldsSchema = z.object({
+  clientName: z.string().optional(),
+  issueDate: z.string().optional(), // YYYY-MM-DD
+  expectedPaymentDate: z.string().optional(), // YYYY-MM-DD
+  amount: z.string().optional(), // keep as string with decimals
+  currency: z.string().optional(),
+  number: z.string().optional(),
+  description: z.string().optional(),
+  notes: z.string().optional()
+}).strict()
+
+async function convertFileToBase64(filePath: string): Promise<{ base64: string; mimeType: string }> {
+  try {
+    const extension = extname(filePath).toLowerCase()
+    const fileBuffer = await fs.readFile(filePath)
+    const base64 = fileBuffer.toString('base64')
+    
+    // Determine MIME type based on extension
+    let mimeType = 'application/octet-stream' // fallback
+    switch (extension) {
+      case '.pdf':
+        mimeType = 'application/pdf'
+        break
+      case '.jpg':
+      case '.jpeg':
+        mimeType = 'image/jpeg'
+        break
+      case '.png':
+        mimeType = 'image/png'
+        break
+      case '.bmp':
+        mimeType = 'image/bmp'
+        break
+      case '.tiff':
+      case '.tif':
+        mimeType = 'image/tiff'
+        break
+      case '.webp':
+        mimeType = 'image/webp'
+        break
+    }
+    
+    return { base64, mimeType }
+  } catch (error) {
+    console.error('📄 File conversion failed:', error)
+    throw new Error(`Failed to convert file to base64: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+async function analyzeBillDocumentWithOpenAI(filePath: string, apiKey: string): Promise<any> {
+  try {
+    // Convert file to base64 for OpenAI API
+    const { base64, mimeType } = await convertFileToBase64(filePath)
+    
+    // Check file size (OpenAI has limits)
+    const fileStats = await fs.stat(filePath)
+    const fileSizeMB = fileStats.size / (1024 * 1024)
+    
+    if (fileSizeMB > 20) { // OpenAI limit is typically around 20MB
+      throw new Error('File is too large (max 20MB). Please use a smaller file.')
+    }
+    
+    // Set up OpenAI API key
+    const prevKey = process.env.OPENAI_API_KEY
+    process.env.OPENAI_API_KEY = apiKey
+    
+    try {
+      const { generateObject } = await import('ai')
+      const { openai } = await import('@ai-sdk/openai')
+      
+      const { object } = await generateObject({
+        model: openai('gpt-4o-mini'), // Use GPT-4O for vision capabilities
+        schema: ExtractedBillFieldsSchema as any,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `You are a precise invoice/bill document analyzer. Analyze this document and extract structured information.
+
+Instructions:
+- Extract client/customer name (who the bill is for)
+- Find the issue date (convert to YYYY-MM-DD format)
+- Find the due date or payment date (convert to YYYY-MM-DD format)
+- Identify the total amount (as decimal string like "123.45", without currency symbols)
+- Determine the currency (EUR, USD, GBP, etc.)
+- Extract the invoice/bill number
+- Get service or product description
+- Extract any relevant notes or additional observations
+
+Return ONLY the fields you can confidently identify. If unsure about a field, omit it.
+
+Required JSON keys (all optional): clientName, issueDate, expectedPaymentDate, amount, currency, number, description, notes`
+              },
+              {
+                type: 'image',
+                image: `data:${mimeType};base64,${base64}`
+              }
+            ]
+          }
+        ]
+      })
+      
+      // Ensure output matches expected schema
+      const fields = ExtractedBillFieldsSchema.parse(object)
+      
+      return { ok: true, fields }
+      
+    } finally {
+      // Restore previous API key
+      if (prevKey === undefined) {
+        delete process.env.OPENAI_API_KEY
+      } else {
+        process.env.OPENAI_API_KEY = prevKey
+      }
+    }
+    
+  } catch (error) {
+    throw error
+  }
+}
+
+ipcMain.handle('bill:extractFields', async (_e, filePath: unknown) => {
+  try {
+    const validatedPath = z.string().min(1).parse(filePath)
+
+    // Load OpenAI key
+    const keyRes = await client.query('SELECT openai_key FROM setting WHERE id = 1')
+    const keyText = (keyRes.rows?.[0] as any)?.openai_key as string | undefined
+    if (!keyText) {
+      return { error: { code: 'OPENAI_API_KEY_MISSING', message: 'OpenAI API key is not configured. Please add your key in Settings.' } }
+    }
+    
+    // Parse key data
+    let parsedKey
+    try {
+      parsedKey = JSON.parse(keyText)
+    } catch (parseError) {
+      console.error('🔑 Failed to parse key JSON:', parseError)
+      return { error: { code: 'KEY_PARSE_ERROR', message: 'Invalid key format in database' } }
+    }
+    
+    // Extract API key based on storage format
+    let apiKey: string | null = null
+    if (parsedKey.encrypted === false) {
+      // Plain key
+      apiKey = parsedKey.key
+    } else {
+      // Encrypted key - this would need decryption logic
+      console.error('🔐 Encrypted keys not yet supported for bills extraction')
+      return { error: { code: 'ENCRYPTED_KEY_UNSUPPORTED', message: 'Encrypted API keys are not yet supported for bill extraction' } }
+    }
+    
+    if (!apiKey) {
+      return { error: { code: 'API_KEY_INVALID', message: 'API key is invalid or missing' } }
+    }
+    
+    // Check if file exists
+    try {
+      await fs.access(validatedPath)
+    } catch {
+      return { error: { code: 'FILE_NOT_FOUND', message: 'The specified file could not be found' } }
+    }
+    
+    // Analyze document with OpenAI
+    const result = await analyzeBillDocumentWithOpenAI(validatedPath, apiKey)
+    
+    if (!result.ok) {
+      return { error: { code: 'ANALYSIS_FAILED', message: 'Document analysis failed' } }
+    }
+    
+    return { fields: result.fields }
+  } catch (error) {
+    console.error('❌ Extract bill fields error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    
+    // Handle specific error types
+    if (error instanceof Error) {
+      if (errorMessage.includes('401') || errorMessage.includes('unauthorized') || errorMessage.includes('invalid_api_key')) {
+        return { 
+          error: { 
+            code: 'INVALID_API_KEY', 
+            message: 'Invalid OpenAI API key. Please check your API key in Settings and ensure it has sufficient permissions.' 
+          } 
+        }
+      } else if (errorMessage.includes('quota') || errorMessage.includes('limit') || errorMessage.includes('rate')) {
+        return { 
+          error: { 
+            code: 'API_QUOTA_EXCEEDED', 
+            message: 'OpenAI API quota exceeded or rate limit hit. Please check your account billing or try again later.' 
+          } 
+        }
+      } else if (errorMessage.includes('too large')) {
+        return { 
+          error: { 
+            code: 'FILE_TOO_LARGE', 
+            message: 'File is too large (max 20MB). Please use a smaller file.' 
+          } 
+        }
+      } else if (errorMessage.includes('Failed to convert file')) {
+        return { 
+          error: { 
+            code: 'FILE_CONVERSION_ERROR', 
+            message: 'Failed to prepare file for analysis. The file may be corrupted or in an unsupported format.' 
+          } 
+        }
+      } else if (errorMessage.includes('unsupported') || errorMessage.includes('invalid')) {
+        return { 
+          error: { 
+            code: 'UNSUPPORTED_FILE_FORMAT', 
+            message: 'File format not supported for AI analysis. Please use PDF, JPG, PNG, or other common image formats.' 
+          } 
+        }
+      } else {
+        return { 
+          error: { 
+            code: 'VISION_ANALYSIS_ERROR', 
+            message: `AI document analysis failed: ${errorMessage}. Please try a different file or enter the information manually.` 
+          } 
+        }
+      }
+    }
+    
+    return { error: { code: 'EXTRACT_FIELDS_ERROR', message: errorMessage } }
   }
 })

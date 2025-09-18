@@ -79,6 +79,9 @@ const api = {
 
   updateBillStatus: (id: string, status: string): Promise<ApiResponse> =>
     ipcRenderer.invoke('bill:updateStatus', id, status),
+
+  extractBillFields: (filePath: string): Promise<ApiResponse<{ fields?: { clientName?: string; issueDate?: string; expectedPaymentDate?: string; amount?: string; currency?: string; number?: string; description?: string; notes?: string } }>> =>
+    ipcRenderer.invoke('bill:extractFields', filePath),
   
   // Expense operations
   addExpense: (input: ExpenseInput): Promise<ApiResponse<{ id: string }>> =>
@@ -125,6 +128,12 @@ const api = {
   
   getExpensesRoot: (): Promise<ApiResponse<{ path: string | null }>> =>
     ipcRenderer.invoke('settings:getExpensesRoot'),
+
+  // OpenAI Key management
+  getOpenAIKey: (): Promise<ApiResponse<{ key: string | null }>> =>
+    ipcRenderer.invoke('settings:getOpenAIKey'),
+  saveOpenAIKey: (apiKey: string): Promise<ApiResponse> =>
+    ipcRenderer.invoke('settings:saveOpenAIKey', { apiKey }),
   
   // System operations
   openPath: (path: string): Promise<ApiResponse> =>
@@ -186,7 +195,13 @@ const api = {
 
   // Debug operations
   checkConfigFile: (): Promise<ApiResponse> =>
-    ipcRenderer.invoke('debug:checkConfigFile')
+    ipcRenderer.invoke('debug:checkConfigFile'),
+  checkDatabase: (): Promise<ApiResponse> =>
+    ipcRenderer.invoke('debug:checkDatabase'),
+  testPdfParsing: (filePath: string): Promise<ApiResponse<{ textLength: number; preview: string; analysis?: any }>> =>
+    ipcRenderer.invoke('debug:testPdfParsing', filePath),
+  diagnoseExtraction: (expenseId: string): Promise<ApiResponse<{ diagnosis: any }>> =>
+    ipcRenderer.invoke('debug:diagnoseExtraction', expenseId)
 }
 
 // Expose API to renderer process
