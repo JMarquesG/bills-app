@@ -2,7 +2,7 @@ import { ipcMain, app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { join, extname } from 'node:path'
 import { z } from 'zod'
-import { client } from '@bills/db'
+import { client, createAutoBackupIfPossible } from '@bills/db'
 import { generateInvoicePdf } from '../pdf'
 import { getDataRoot, getBillsFolder, ensureDirectoryExists } from './settings'
 import { generateId } from './utils'
@@ -183,6 +183,9 @@ ipcMain.handle('bill:create', async (_, input) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, current_timestamp, current_timestamp)`,
       [invoiceId, data.number, clientId, data.issueDate, expectedPaymentDate.toISOString().slice(0,10), data.amount, data.currency, pdfPath, billFolder, data.description, data.notes || null]
     )
+    
+    // Create automatic backup after successful bill creation
+    createAutoBackupIfPossible() // Don't await to avoid slowing down the UI response
     
     return { ok: true, id: invoiceId, folderPath: billFolder, filePath: pdfPath }
   } catch (error) {
@@ -467,40 +470,10 @@ Required JSON keys (all optional): clientName, issueDate, expectedPaymentDate, a
   }
 }
 
+// Use the new unified AI system for bill field extraction
 ipcMain.handle('bill:extractFields', async (_e, filePath: unknown) => {
   try {
     const validatedPath = z.string().min(1).parse(filePath)
-
-    // Load OpenAI key
-    const keyRes = await client.query('SELECT openai_key FROM setting WHERE id = 1')
-    const keyText = (keyRes.rows?.[0] as any)?.openai_key as string | undefined
-    if (!keyText) {
-      return { error: { code: 'OPENAI_API_KEY_MISSING', message: 'OpenAI API key is not configured. Please add your key in Settings.' } }
-    }
-    
-    // Parse key data
-    let parsedKey
-    try {
-      parsedKey = JSON.parse(keyText)
-    } catch (parseError) {
-      console.error('🔑 Failed to parse key JSON:', parseError)
-      return { error: { code: 'KEY_PARSE_ERROR', message: 'Invalid key format in database' } }
-    }
-    
-    // Extract API key based on storage format
-    let apiKey: string | null = null
-    if (parsedKey.encrypted === false) {
-      // Plain key
-      apiKey = parsedKey.key
-    } else {
-      // Encrypted key - this would need decryption logic
-      console.error('🔐 Encrypted keys not yet supported for bills extraction')
-      return { error: { code: 'ENCRYPTED_KEY_UNSUPPORTED', message: 'Encrypted API keys are not yet supported for bill extraction' } }
-    }
-    
-    if (!apiKey) {
-      return { error: { code: 'API_KEY_INVALID', message: 'API key is invalid or missing' } }
-    }
     
     // Check if file exists
     try {
@@ -509,65 +482,30 @@ ipcMain.handle('bill:extractFields', async (_e, filePath: unknown) => {
       return { error: { code: 'FILE_NOT_FOUND', message: 'The specified file could not be found' } }
     }
     
-    // Analyze document with OpenAI
-    const result = await analyzeBillDocumentWithOpenAI(validatedPath, apiKey)
+    console.log('🔄 Using unified AI system for bill analysis:', validatedPath)
     
-    if (!result.ok) {
-      return { error: { code: 'ANALYSIS_FAILED', message: 'Document analysis failed' } }
+    // Use the unified AI system (handles both OpenAI and Local AI based on settings)
+    const { analyzeDocument } = await import('../ai')
+    const result = await analyzeDocument(validatedPath, 'bill')
+    
+    console.log('✅ Unified AI analysis completed successfully')
+    return { 
+      fields: result.fields,
+      confidence: result.confidence,
+      textExtracted: result.text.length 
     }
     
-    return { fields: result.fields }
   } catch (error) {
     console.error('❌ Extract bill fields error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     
-    // Handle specific error types
-    if (error instanceof Error) {
-      if (errorMessage.includes('401') || errorMessage.includes('unauthorized') || errorMessage.includes('invalid_api_key')) {
-        return { 
-          error: { 
-            code: 'INVALID_API_KEY', 
-            message: 'Invalid OpenAI API key. Please check your API key in Settings and ensure it has sufficient permissions.' 
-          } 
-        }
-      } else if (errorMessage.includes('quota') || errorMessage.includes('limit') || errorMessage.includes('rate')) {
-        return { 
-          error: { 
-            code: 'API_QUOTA_EXCEEDED', 
-            message: 'OpenAI API quota exceeded or rate limit hit. Please check your account billing or try again later.' 
-          } 
-        }
-      } else if (errorMessage.includes('too large')) {
-        return { 
-          error: { 
-            code: 'FILE_TOO_LARGE', 
-            message: 'File is too large (max 20MB). Please use a smaller file.' 
-          } 
-        }
-      } else if (errorMessage.includes('Failed to convert file')) {
-        return { 
-          error: { 
-            code: 'FILE_CONVERSION_ERROR', 
-            message: 'Failed to prepare file for analysis. The file may be corrupted or in an unsupported format.' 
-          } 
-        }
-      } else if (errorMessage.includes('unsupported') || errorMessage.includes('invalid')) {
-        return { 
-          error: { 
-            code: 'UNSUPPORTED_FILE_FORMAT', 
-            message: 'File format not supported for AI analysis. Please use PDF, JPG, PNG, or other common image formats.' 
-          } 
-        }
-      } else {
-        return { 
-          error: { 
-            code: 'VISION_ANALYSIS_ERROR', 
-            message: `AI document analysis failed: ${errorMessage}. Please try a different file or enter the information manually.` 
-          } 
-        }
-      }
+    // Provide helpful error messages
+    if (errorMessage.includes('Unsupported file format')) {
+      return { error: { code: 'UNSUPPORTED_FILE_FORMAT', message: errorMessage } }
+    } else if (errorMessage.includes('File not accessible')) {
+      return { error: { code: 'FILE_NOT_FOUND', message: errorMessage } }
+    } else {
+      return { error: { code: 'EXTRACT_FIELDS_ERROR', message: errorMessage } }
     }
-    
-    return { error: { code: 'EXTRACT_FIELDS_ERROR', message: errorMessage } }
   }
 })

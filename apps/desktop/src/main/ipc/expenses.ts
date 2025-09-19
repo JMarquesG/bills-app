@@ -4,7 +4,7 @@ import { join, extname, dirname } from 'node:path'
 import { z } from 'zod'
 import { openai } from '@ai-sdk/openai'
 import { generateObject } from 'ai'
-import { client } from '@bills/db'
+import { client, createAutoBackupIfPossible } from '@bills/db'
 import { getDataRoot, getExpensesFolder, ensureDirectoryExists } from './settings'
 import { generateId, createError } from './utils'
 
@@ -38,6 +38,9 @@ ipcMain.handle('expense:add', async (_, input) => {
        VALUES ($1, $2, $3, $4, $5, $6, 'EUR', $7, current_timestamp, current_timestamp)`,
       [expenseId, data.invoiceId || null, data.vendor, data.category, data.date, data.amount, data.notes || null]
     )
+    
+    // Create automatic backup after successful expense creation
+    createAutoBackupIfPossible() // Don't await to avoid slowing down the UI response
     
     return { ok: true, id: expenseId }
   } catch (error) {
@@ -100,6 +103,10 @@ ipcMain.handle('expense:update', async (_e, input) => {
        WHERE id=$7`,
       [data.vendor, data.category, data.date, data.amount, data.notes || null, data.invoiceId || null, data.id]
     )
+    
+    // Create automatic backup after successful expense update
+    createAutoBackupIfPossible() // Don't await to avoid slowing down the UI response
+    
     return { ok: true }
   } catch (error) {
     return createError('UPDATE_EXPENSE_ERROR', error)
@@ -331,65 +338,10 @@ Required JSON keys (all optional): vendor, category, date, amount, notes`
 }
 
 
+// Use the new unified AI system for expense field extraction
 ipcMain.handle('expense:extractFields', async (_e, expenseId: unknown) => {
   try {
     const validatedId = z.string().min(1).parse(expenseId)
-
-    // Load OpenAI key
-    const keyRes = await client.query('SELECT openai_key FROM setting WHERE id = 1')
-    const keyText = (keyRes.rows?.[0] as any)?.openai_key as string | undefined
-    if (!keyText) {
-      return { error: { code: 'OPENAI_API_KEY_MISSING', message: 'OpenAI API key is not configured. Please add your key in Settings.' } }
-    }
-    
-    // Parse key data
-    let parsedKey
-    try {
-      parsedKey = JSON.parse(keyText)
-    } catch (parseError) {
-      console.error('🔑 Failed to parse key JSON:', parseError)
-      return { error: { code: 'KEY_PARSE_ERROR', message: 'Invalid key format in database' } }
-    }
-    
-    // Extract API key based on storage format
-    let apiKey: string | null = null
-    if (parsedKey.encrypted === false) {
-      // Plain text storage (no password set)
-      console.log('🔑 Key stored as plain text')
-      apiKey = parsedKey.plainText
-    } else if (parsedKey.encrypted === true) {
-      // Encrypted storage (password was set)
-      console.log('🔑 Key is encrypted, checking session key...')
-      try {
-        const { decryptSecret, hasSessionKey } = await import('../secrets')
-        console.log('🔑 Has session key?', hasSessionKey())
-        if (!hasSessionKey()) {
-          return { error: { code: 'LOCKED', message: 'Unlock with password to use AI' } }
-        }
-        apiKey = decryptSecret(parsedKey.iv, parsedKey.cipherText)
-        console.log('🔑 Decrypted key length:', apiKey?.length || 0)
-      } catch {
-        return { error: { code: 'DECRYPT_ERROR', message: 'Failed to access AI key' } }
-      }
-    } else {
-      // Legacy format (old encrypted format without explicit flag)
-      console.log('🔑 Legacy encrypted format detected')
-      try {
-        const { decryptSecret, hasSessionKey } = await import('../secrets')
-        console.log('🔑 Has session key?', hasSessionKey())
-        if (!hasSessionKey()) {
-          return { error: { code: 'LOCKED', message: 'Unlock with password to use AI' } }
-        }
-        apiKey = decryptSecret(parsedKey.iv, parsedKey.cipherText)
-        console.log('🔑 Decrypted legacy key length:', apiKey?.length || 0)
-      } catch {
-        return { error: { code: 'DECRYPT_ERROR', message: 'Failed to access AI key' } }
-      }
-    }
-    
-    if (!apiKey) {
-      return { error: { code: 'OPENAI_API_KEY_MISSING', message: 'OpenAI API key is not available' } }
-    }
 
     // Load expense to get file path
     console.log('📄 Loading expense file path...')
@@ -399,67 +351,32 @@ ipcMain.handle('expense:extractFields', async (_e, expenseId: unknown) => {
       return { error: { code: 'NO_FILE_ATTACHED', message: 'No file attached to this expense' } }
     }
 
-    console.log('🤖 Starting direct OpenAI vision analysis:', row.file_path)
+    console.log('🔄 Using unified AI system for expense analysis:', row.file_path)
     
-    try {
-      // Use direct OpenAI vision analysis instead of OCR
-      const result = await analyzeDocumentWithOpenAI(row.file_path as string, apiKey)
-      console.log('✅ OpenAI vision analysis completed successfully')
-      return result
-      
-    } catch (visionError) {
-      console.error('🤖 OpenAI vision analysis failed:', visionError)
-      const errorMessage = visionError instanceof Error ? visionError.message : 'Unknown vision error'
-      
-      // Provide helpful error messages based on the error type
-      if (errorMessage.includes('401') || errorMessage.includes('authentication')) {
-        return { 
-          error: { 
-            code: 'INVALID_API_KEY', 
-            message: 'Invalid OpenAI API key. Please check your key in Settings.' 
-          } 
-        }
-      } else if (errorMessage.includes('quota') || errorMessage.includes('limit') || errorMessage.includes('rate')) {
-        return { 
-          error: { 
-            code: 'API_QUOTA_EXCEEDED', 
-            message: 'OpenAI API quota exceeded or rate limit hit. Please check your account billing or try again later.' 
-          } 
-        }
-      } else if (errorMessage.includes('too large')) {
-        return { 
-          error: { 
-            code: 'FILE_TOO_LARGE', 
-            message: 'File is too large (max 20MB). Please use a smaller file.' 
-          } 
-        }
-      } else if (errorMessage.includes('Failed to convert file')) {
-        return { 
-          error: { 
-            code: 'FILE_CONVERSION_ERROR', 
-            message: 'Failed to prepare file for analysis. The file may be corrupted or in an unsupported format.' 
-          } 
-        }
-      } else if (errorMessage.includes('unsupported') || errorMessage.includes('invalid')) {
-        return { 
-          error: { 
-            code: 'UNSUPPORTED_FILE_FORMAT', 
-            message: 'File format not supported for AI analysis. Please use PDF, JPG, PNG, or other common image formats.' 
-          } 
-        }
-      } else {
-        return { 
-          error: { 
-            code: 'VISION_ANALYSIS_ERROR', 
-            message: `AI document analysis failed: ${errorMessage}. Please try a different file or enter the information manually.` 
-          } 
-        }
-      }
+    // Use the unified AI system (handles both OpenAI and Local AI based on settings)
+    const { analyzeDocument } = await import('../ai')
+    const result = await analyzeDocument(row.file_path as string, 'expense')
+    
+    console.log('✅ Unified AI analysis completed successfully')
+    return { 
+      ok: true, 
+      fields: result.fields,
+      confidence: result.confidence,
+      textExtracted: result.text.length 
     }
+    
   } catch (error) {
     console.error('❌ Extract fields error:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'
-    return { error: { code: 'EXTRACT_FIELDS_ERROR', message } }
+    
+    // Provide helpful error messages
+    if (message.includes('Unsupported file format')) {
+      return { error: { code: 'UNSUPPORTED_FILE_FORMAT', message } }
+    } else if (message.includes('File not accessible')) {
+      return { error: { code: 'FILE_NOT_FOUND', message } }
+    } else {
+      return { error: { code: 'EXTRACT_FIELDS_ERROR', message } }
+    }
   }
 })
 

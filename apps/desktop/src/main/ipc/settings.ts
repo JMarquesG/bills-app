@@ -2,7 +2,7 @@ import { ipcMain, dialog, app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { z } from 'zod'
-import { client, resetConnection } from '@bills/db'
+import { client, resetConnection, checkForBackupFiles, resetAndRestoreDatabase, createDataBackup } from '@bills/db'
 import { encryptSecret, decryptSecret, hasSessionKey } from '../secrets'
 
 const companyProfileSchema = z.object({
@@ -316,6 +316,14 @@ ipcMain.handle('settings:save', async (_, data: { dataRoot?: string; billsRoot?:
       // Save config file
       await saveConfigFile(data.dataRoot)
       console.log('✅ Configuration saved successfully!')
+      
+      // Create backup after successful configuration
+      try {
+        await createDataBackup(data.dataRoot)
+        console.log('✅ Automatic backup created successfully')
+      } catch (backupError) {
+        console.log('ℹ️ Automatic backup failed but continuing - this is often normal for new installations:', backupError instanceof Error ? backupError.message : 'Unknown backup error')
+      }
     } else {
       console.log('📁 Using legacy separate folders approach')
       // Legacy: separate folders (backwards compatibility)
@@ -386,6 +394,14 @@ ipcMain.handle('settings:reconfigure', async (_, newDataRoot: string) => {
     
     // Save config file
     await saveConfigFile(newDataRoot)
+    
+    // Create backup after successful reconfiguration
+    try {
+      await createDataBackup(newDataRoot)
+      console.log('✅ Automatic backup created after reconfiguration')
+    } catch (backupError) {
+      console.log('ℹ️ Automatic backup failed but continuing:', backupError instanceof Error ? backupError.message : 'Unknown backup error')
+    }
     
     return { ok: true, billsFolder, expensesFolder }
   } catch (error) {
@@ -512,7 +528,7 @@ ipcMain.handle('folder:checkAndLoadConfig', async (_, folderPath: string) => {
   }
 })
 
-// Enhanced folder picker that automatically checks for existing config
+// Enhanced folder picker that automatically checks for existing config and backup
 ipcMain.handle('folder:pickDataRootWithConfigCheck', async () => {
   try {
     const result = await dialog.showOpenDialog({
@@ -530,6 +546,9 @@ ipcMain.handle('folder:pickDataRootWithConfigCheck', async () => {
     // Check if the selected folder has an existing config file
     const configResult = await loadConfigFromFolder(selectedPath)
     
+    // Check if the selected folder has backup files
+    const backupResult = await checkForBackupFiles(selectedPath)
+    
     if (configResult) {
       console.log('📄 Auto-loading existing configuration from:', selectedPath)
       
@@ -542,7 +561,9 @@ ipcMain.handle('folder:pickDataRootWithConfigCheck', async () => {
         path: selectedPath,
         hasExistingConfig: true,
         autoLoaded: true,
-        config: configResult
+        config: configResult,
+        hasBackup: backupResult.hasBackup,
+        backupSummary: backupResult.summary
       }
     }
     
@@ -550,7 +571,9 @@ ipcMain.handle('folder:pickDataRootWithConfigCheck', async () => {
       canceled: false,
       path: selectedPath,
       hasExistingConfig: false,
-      autoLoaded: false
+      autoLoaded: false,
+      hasBackup: backupResult.hasBackup,
+      backupSummary: backupResult.summary
     }
   } catch (error) {
     return { 

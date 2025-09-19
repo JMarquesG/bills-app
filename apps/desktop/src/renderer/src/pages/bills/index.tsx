@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../../components/PageHeader'
 import { EmailModal } from '../../components/EmailModal'
+import { SmartSearch } from '../../components/SmartSearch'
 
 interface Bill {
   id: string
@@ -21,17 +22,155 @@ interface Bill {
   updatedAt: string
 }
 
+interface SearchFilters {
+  text: string
+  year?: string
+  client?: string
+  category?: string
+  status?: string
+  vendor?: string
+}
+
+interface Predictor {
+  id: string
+  label: string
+  type: 'year' | 'client' | 'category' | 'status' | 'vendor' | 'custom'
+  value: string
+  count?: number
+}
+
 export default function BillsPage() {
   const navigate = useNavigate()
   const [bills, setBills] = useState<Bill[]>([])
+  const [filteredBills, setFilteredBills] = useState<Bill[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [selectedBillForEmail, setSelectedBillForEmail] = useState<Bill | null>(null)
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({ text: '' })
 
   useEffect(() => {
     fetchBills()
   }, [])
+
+  // Generate predictors from bills data
+  const predictors = useMemo(() => {
+    const preds: Predictor[] = []
+    
+    // Years
+    const years = new Set<string>()
+    const clients = new Map<string, number>()
+    const statuses = new Map<string, number>()
+    
+    bills.forEach(bill => {
+      // Extract year
+      const year = new Date(bill.issueDate).getFullYear().toString()
+      years.add(year)
+      
+      // Count clients
+      clients.set(bill.clientName, (clients.get(bill.clientName) || 0) + 1)
+      
+      // Count statuses
+      statuses.set(bill.status, (statuses.get(bill.status) || 0) + 1)
+    })
+    
+    // Add year predictors
+    Array.from(years).sort().reverse().forEach(year => {
+      const count = bills.filter(b => new Date(b.issueDate).getFullYear().toString() === year).length
+      preds.push({
+        id: `year-${year}`,
+        label: year,
+        type: 'year',
+        value: year,
+        count
+      })
+    })
+    
+    // Add client predictors (top 10)
+    Array.from(clients.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .forEach(([client, count]) => {
+        preds.push({
+          id: `client-${client}`,
+          label: client,
+          type: 'client',
+          value: client,
+          count
+        })
+      })
+    
+    // Add status predictors
+    Array.from(statuses.entries())
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([status, count]) => {
+        preds.push({
+          id: `status-${status}`,
+          label: status === 'PAID' ? 'Paid' : 'Unpaid',
+          type: 'status',
+          value: status,
+          count
+        })
+      })
+    
+    return preds
+  }, [bills])
+
+  // Filter bills based on search
+  useEffect(() => {
+    let filtered = [...bills]
+    
+    // Text search (fuzzy search across multiple fields)
+    if (searchFilters.text) {
+      const query = searchFilters.text.toLowerCase()
+      filtered = filtered.filter(bill => {
+        const searchableText = [
+          bill.number,
+          bill.clientName,
+          bill.clientEmail || '',
+          bill.notes || '',
+          bill.amount,
+          new Date(bill.issueDate).toLocaleDateString()
+        ].join(' ').toLowerCase()
+        
+        // Simple fuzzy search - check if all characters exist in order
+        let queryIndex = 0
+        for (let i = 0; i < searchableText.length && queryIndex < query.length; i++) {
+          if (searchableText[i] === query[queryIndex]) {
+            queryIndex++
+          }
+        }
+        return queryIndex === query.length || searchableText.includes(query)
+      })
+    }
+    
+    // Year filter
+    if (searchFilters.year) {
+      filtered = filtered.filter(bill => 
+        new Date(bill.issueDate).getFullYear().toString() === searchFilters.year
+      )
+    }
+    
+    // Client filter
+    if (searchFilters.client) {
+      filtered = filtered.filter(bill => 
+        bill.clientName === searchFilters.client
+      )
+    }
+    
+    // Status filter
+    if (searchFilters.status) {
+      filtered = filtered.filter(bill => 
+        bill.status === searchFilters.status
+      )
+    }
+    
+    setFilteredBills(filtered)
+  }, [bills, searchFilters])
+
+  const handleSearch = (query: string, filters: SearchFilters) => {
+    setSearchFilters(filters)
+  }
 
   const fetchBills = async () => {
     try {
@@ -163,6 +302,16 @@ export default function BillsPage() {
         )} 
       />
 
+      {/* Search */}
+      <div className="mb-6">
+        <SmartSearch
+          placeholder="Search bills by client, number, amount..."
+          onSearch={handleSearch}
+          predictors={predictors}
+          className="max-w-md"
+        />
+      </div>
+
       {/* Bills Table */}
       <div className="dashboard-card bg-card p-6">
         {bills.length === 0 ? (
@@ -188,6 +337,20 @@ export default function BillsPage() {
               Create Bill
             </button>
           </div>
+        ) : filteredBills.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="rounded-full bg-muted p-6 mb-4">
+              <svg className="h-12 w-12 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold mb-2 text-card-foreground">
+              No bills found
+            </h3>
+            <p className="text-muted-foreground mb-4 max-w-sm">
+              No bills match your search criteria. Try adjusting your search terms.
+            </p>
+          </div>
         ) : (
           <table className="w-full border-collapse">
             <thead>
@@ -201,7 +364,7 @@ export default function BillsPage() {
               </tr>
             </thead>
             <tbody>
-              {bills.map(bill => (
+              {filteredBills.map(bill => (
                 <tr key={bill.id} className="border-b  hover:bg-muted/50 transition-colors">
                   <td className="p-3 font-medium text-card-foreground">
                     {bill.number}
@@ -236,7 +399,17 @@ export default function BillsPage() {
                     <div className="flex gap-2">
                       <button 
                         className="btn btn-outline btn-sm"
-                        onClick={() => navigate(`/bills/${bill.id}`)}
+                        onClick={() => navigate(`/bills/${bill.id}/view`)}
+                      >
+                        <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        View
+                      </button>
+                      <button 
+                        className="btn btn-outline btn-sm"
+                        onClick={() => navigate(`/bills/${bill.id}/edit`)}
                       >
                         <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z" />

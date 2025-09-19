@@ -276,12 +276,12 @@ export default function EditBillPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
+    <div className="min-h-screen bg-background p-3 sm:p-6">
       <PageHeader title="Edit Bill" subtitle="Update invoice information" />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
       {/* Form */}
-      <div className="apple-card bg-card p-8 max-w-2xl w-full">
+      <div className="apple-card bg-card p-4 sm:p-6 lg:p-8 w-full min-w-0">
         {errors.length > 0 && (
           <div className="bg-destructive/10 border-destructive/20 rounded-xl p-3 mb-6">
             {errors.map((error, idx) => (
@@ -296,9 +296,9 @@ export default function EditBillPage() {
           <div className="grid gap-5">
             {/* Client */}
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <label className="block text-sm font-medium text-card-foreground">Client</label>
-                <div className="text-xs text-muted-foreground flex gap-3">
+                <div className="text-xs text-muted-foreground flex flex-wrap gap-2 sm:gap-3">
                   <button type="button" onClick={() => navigate('/clients/new')} className="btn btn-link">Add client</button>
                   <button type="button" onClick={() => navigate('/clients')} className="btn btn-link">Manage clients</button>
                 </div>
@@ -322,15 +322,15 @@ export default function EditBillPage() {
                     onChange={(e) => handleInputChange('clientName', e.target.value)}
                     onBlur={handleInputBlur}
                     placeholder="Or type client name"
-                    className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                    className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   />
                 )}
               </div>
             </div>
 
             {/* Invoice Number, Issue Date, Expected Payment */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="sm:col-span-2 lg:col-span-1">
                 <label className="block text-sm font-medium mb-2 text-card-foreground">
                   Invoice Number *
                 </label>
@@ -340,7 +340,7 @@ export default function EditBillPage() {
                   onChange={(e) => handleInputChange('number', e.target.value)}
                   onBlur={handleInputBlur}
                   placeholder="INV-2024-01-001"
-                  className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
@@ -374,8 +374,8 @@ export default function EditBillPage() {
             </div>
 
             {/* Amount and Currency */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="sm:col-span-3">
                 <label className="block text-sm font-medium mb-2 text-card-foreground">
                   Amount *
                 </label>
@@ -386,7 +386,7 @@ export default function EditBillPage() {
                   onChange={(e) => handleInputChange('amount', e.target.value)}
                   onBlur={handleInputBlur}
                   placeholder="0.00"
-                  className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
@@ -419,7 +419,7 @@ export default function EditBillPage() {
                 onBlur={handleInputBlur}
                 placeholder="Service or product description"
                 rows={2}
-                className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y"
+                className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y whitespace-pre-wrap break-words"
                 required
               />
             </div>
@@ -435,7 +435,7 @@ export default function EditBillPage() {
                 onBlur={handleInputBlur}
                 placeholder="Additional observations (optional)"
                 rows={3}
-                className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y"
+                className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y whitespace-pre-wrap break-words"
               />
             </div>
 

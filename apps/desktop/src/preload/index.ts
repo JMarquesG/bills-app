@@ -44,7 +44,7 @@ const api = {
   pickDataRoot: (): Promise<ApiResponse<{ path?: string }>> =>
     ipcRenderer.invoke('folder:pickDataRoot'),
     
-  pickDataRootWithConfigCheck: (): Promise<ApiResponse<{ path?: string; hasExistingConfig?: boolean; autoLoaded?: boolean; config?: any }>> =>
+  pickDataRootWithConfigCheck: (): Promise<ApiResponse<{ path?: string; hasExistingConfig?: boolean; autoLoaded?: boolean; config?: any; hasBackup?: boolean; backupSummary?: any }>> =>
     ipcRenderer.invoke('folder:pickDataRootWithConfigCheck'),
     
   checkAndLoadConfig: (folderPath: string): Promise<ApiResponse<{ hasExistingConfig: boolean; config?: any; autoLoaded?: boolean }>> =>
@@ -149,6 +149,16 @@ const api = {
   getStats: (): Promise<ApiResponse> =>
     ipcRenderer.invoke('data:getStats'),
     
+  // Backup and Restore operations
+  createBackup: (dataRootPath: string): Promise<ApiResponse> =>
+    ipcRenderer.invoke('data:createBackup', { dataRootPath }),
+    
+  checkForBackup: (dataRootPath: string): Promise<ApiResponse<{ hasBackup: boolean; backupPath?: string; summary?: any }>> =>
+    ipcRenderer.invoke('data:checkForBackup', { dataRootPath }),
+    
+  resetAndRestore: (dataRootPath: string): Promise<ApiResponse> =>
+    ipcRenderer.invoke('data:resetAndRestore', { dataRootPath }),
+    
   // Clients
   getClients: (): Promise<ApiResponse<{ clients: Array<{ id: string; name: string; email?: string; taxId?: string; address?: string; phone?: string }> }>> =>
     ipcRenderer.invoke('client:getAll'),
@@ -192,6 +202,26 @@ const api = {
     ipcRenderer.invoke('automation:toggleRule', id),
   getDueAutomationRules: (): Promise<ApiResponse<{ rules: any[] }>> =>
     ipcRenderer.invoke('automation:getDueRules'),
+
+  // AI operations (unified)
+  analyzeDocument: (input: { filePath: string; documentType: 'expense' | 'bill'; extractionFields?: string[] }): Promise<ApiResponse<{ backend: 'local' | 'openai' | 'ollama'; confidence: number; fields: any }>> =>
+    ipcRenderer.invoke('ai:analyzeDocument', input),
+  extractText: (filePath: string): Promise<ApiResponse<{ text: string }>> =>
+    ipcRenderer.invoke('ai:extractText', { filePath }),
+  
+  // AI status and control
+  getAIStatus: (): Promise<ApiResponse<{ backend: 'local' | 'openai' | 'ollama'; localStatus: 'stopped' | 'starting' | 'running' | 'error'; openAiConfigured: boolean; currentProvider?: { status: 'stopped' | 'starting' | 'running' | 'error'; initialized: boolean; loading: boolean; error?: string; download?: { inProgress: boolean; percent?: number; completedBytes?: number; totalBytes?: number; message?: string } } }>> =>
+    ipcRenderer.invoke('ai:getStatus'),
+  startLocalAI: (): Promise<ApiResponse<{ status: string }>> =>
+    ipcRenderer.invoke('ai:startLocal'),
+  stopLocalAI: (): Promise<ApiResponse<{ status: string }>> =>
+    ipcRenderer.invoke('ai:stopLocal'),
+  setAIBackend: (backend: 'local' | 'openai' | 'ollama'): Promise<ApiResponse> =>
+    ipcRenderer.invoke('ai:setBackend', backend),
+  startOllamaAI: (): Promise<ApiResponse<{ status: string }>> =>
+    ipcRenderer.invoke('ai:startOllama'),
+  stopOllamaAI: (): Promise<ApiResponse<{ status: string }>> =>
+    ipcRenderer.invoke('ai:stopOllama'),
 
   // Debug operations
   checkConfigFile: (): Promise<ApiResponse> =>

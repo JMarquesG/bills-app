@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
-import { client } from '@bills/db'
+import { client, createDataBackup, checkForBackupFiles, resetAndRestoreDatabase } from '@bills/db'
+import { z } from 'zod'
 
 // Add IPC handlers for getting bills and expenses data
 ipcMain.handle('data:getBills', async (_, filters?: { status?: string }) => {
@@ -352,5 +353,57 @@ ipcMain.handle('data:getStats', async () => {
     }
   } catch (error) {
     return { error: { code: 'GET_STATS_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
+  }
+})
+
+// Backup and Restore IPC Handlers
+
+const dataRootPathSchema = z.object({
+  dataRootPath: z.string().min(1)
+})
+
+// Create backup of all database data
+ipcMain.handle('data:createBackup', async (_, data: unknown) => {
+  try {
+    console.log('💾 IPC: data:createBackup called with data:', data)
+    
+    const parsed = dataRootPathSchema.parse(data)
+    
+    await createDataBackup(parsed.dataRootPath)
+    
+    return { ok: true }
+  } catch (error) {
+    console.error('❌ Failed to create backup:', error)
+    return { error: { code: 'CREATE_BACKUP_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
+  }
+})
+
+// Check if backup files exist in a directory
+ipcMain.handle('data:checkForBackup', async (_, data: unknown) => {
+  try {
+    const parsed = dataRootPathSchema.parse(data)
+    
+    const result = await checkForBackupFiles(parsed.dataRootPath)
+    
+    return result
+  } catch (error) {
+    console.error('❌ Failed to check for backup:', error)
+    return { error: { code: 'CHECK_BACKUP_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
+  }
+})
+
+// Reset database and restore from backup
+ipcMain.handle('data:resetAndRestore', async (_, data: unknown) => {
+  try {
+    console.log('🔄 IPC: data:resetAndRestore called with data:', data)
+    
+    const parsed = dataRootPathSchema.parse(data)
+    
+    await resetAndRestoreDatabase(parsed.dataRootPath)
+    
+    return { ok: true }
+  } catch (error) {
+    console.error('❌ Failed to reset and restore database:', error)
+    return { error: { code: 'RESET_RESTORE_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
   }
 })

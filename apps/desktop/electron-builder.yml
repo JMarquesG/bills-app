@@ -5,6 +5,12 @@ directories:
   output: dist-electron
 files:
   - out/**
+extraResources:
+  - from: ../../apps/ai-python
+    to: ai-python
+    filter:
+      - "**/*.py"
+      - "requirements.txt"
 nsis:
   oneClick: false
   perMachine: false

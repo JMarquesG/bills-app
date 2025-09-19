@@ -11,7 +11,8 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "start": "npm run -w apps/desktop start",
-    "deploy:mac": "turbo run deploy:mac --filter=@bills/desktop --no-cache"
+    "deploy:mac": "turbo run deploy:mac --filter=@bills/desktop --no-cache",
+    "ai:python:setup": "npm run -w @bills/ai-python setup"
   },
   "devDependencies": {
     "turbo": "2.1.3"

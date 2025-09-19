@@ -1,11 +1,15 @@
 import { Link } from "react-router-dom";
+import { AIStatusIndicator } from "./AIStatusIndicator";
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-40 w-full bg-background">
-      <div className="flex h-16 items-center justify-end px-6">
+    <header className="title-bar fixed top-0 left-0 right-0 z-50 h-16 bg-transparent">
+      <div className="flex h-full items-center justify-between px-6">
+        {/* Draggable area spans the full height and most of the width */}
+        <div className="flex-1 h-full flex items-center"></div>
         {/* Settings items on the right */}
         <div className="flex items-center space-x-4">
+          <AIStatusIndicator />
           <Link
             to="/settings"
             className="p-2 rounded-lg hover:bg-secondary transition-colors"

@@ -12,13 +12,15 @@ import ClientsEditPage from './pages/clients/Edit'
 import BillsPage from './pages/bills'
 import BillsNewPage from './pages/bills/New'
 import BillsEditPage from './pages/bills/Edit'
+import BillsViewPage from './pages/bills/View'
 import ExpensesPage from './pages/expenses'
+import ExpensesViewPage from './pages/expenses/View'
 import SettingsPage from './pages/settings'
 import SettingsMyDataPage from './pages/settings/MyData'
 import AutomationPage from './pages/automation'
 
 function App() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   const handleToggleSidebar = () => {
     setSidebarCollapsed(!sidebarCollapsed);
@@ -49,8 +51,11 @@ function App() {
                     <Route path="/clients/:id" element={<ClientsEditPage />} />
                     <Route path="/bills" element={<BillsPage />} />
                     <Route path="/bills/new" element={<BillsNewPage />} />
+                    <Route path="/bills/:id/view" element={<BillsViewPage />} />
+                    <Route path="/bills/:id/edit" element={<BillsEditPage />} />
                     <Route path="/bills/:id" element={<BillsEditPage />} />
                     <Route path="/expenses" element={<ExpensesPage />} />
+                    <Route path="/expenses/:id/view" element={<ExpensesViewPage />} />
                     <Route path="/automation" element={<AutomationPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                     <Route path="/settings/my-data" element={<SettingsMyDataPage />} />

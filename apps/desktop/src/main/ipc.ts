@@ -1,6 +1,7 @@
 // Import all IPC modules
 import './ipc/settings'
 import './ipc/auth'
+import './ipc/ai'
 import './ipc/bills'
 import './ipc/expenses'
 import './ipc/data'

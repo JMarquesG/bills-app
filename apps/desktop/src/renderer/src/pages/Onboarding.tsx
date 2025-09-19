@@ -10,6 +10,9 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [configLoaded, setConfigLoaded] = useState(false)
+  const [hasBackup, setHasBackup] = useState(false)
+  const [backupSummary, setBackupSummary] = useState<any>(null)
+  const [showResetOption, setShowResetOption] = useState(false)
 
   const handlePickDataRoot = async () => {
     try {
@@ -21,6 +24,15 @@ export default function OnboardingPage() {
       }
       if (!result.canceled && result.path) {
         setDataRoot(result.path)
+        
+        // Check if backup was found
+        if (result.hasBackup) {
+          setHasBackup(true)
+          setBackupSummary(result.backupSummary)
+        } else {
+          setHasBackup(false)
+          setBackupSummary(null)
+        }
         
         // Check if config was auto-loaded
         if (result.hasExistingConfig && result.autoLoaded) {
@@ -45,6 +57,36 @@ export default function OnboardingPage() {
     } catch (error) {
       setErrors(['Failed to select data folder'])
     }
+  }
+
+  const handleResetDatabase = async () => {
+    if (!dataRoot) return
+    
+    setLoading(true)
+    setErrors([])
+    
+    try {
+      if (!window.api) return
+      
+      const result = await window.api.resetAndRestore(dataRoot)
+      if (result.error) {
+        setErrors([result.error.message])
+        setLoading(false)
+        return
+      }
+      
+      // After successful reset, continue with setup
+      setLoading(false)
+      setShowResetOption(false)
+      setStep(1) // Continue to password setup
+    } catch (error) {
+      setErrors(['Failed to reset database from backup'])
+      setLoading(false)
+    }
+  }
+
+  const handleShowResetOption = () => {
+    setShowResetOption(true)
   }
 
   const handleComplete = async () => {
@@ -155,6 +197,29 @@ export default function OnboardingPage() {
                         </div>
                       </div>
                     )}
+                    {hasBackup && backupSummary && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-md p-2 mt-2">
+                        <div className="text-xs text-blue-700 font-medium">
+                          🔄 Backup found in this folder
+                        </div>
+                        <div className="text-xs text-blue-600 mt-1">
+                          Backup date: {backupSummary.backupDate ? new Date(backupSummary.backupDate).toLocaleDateString() : 'Unknown'}
+                        </div>
+                        {backupSummary.totalRecords && (
+                          <div className="text-xs text-blue-600">
+                            Total records: {backupSummary.totalRecords}
+                          </div>
+                        )}
+                        {!showResetOption && (
+                          <button
+                            onClick={handleShowResetOption}
+                            className="text-xs text-blue-700 underline mt-1 hover:text-blue-900"
+                          >
+                            Reset database from this backup
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div className="text-xs text-muted-foreground mt-1">
                       • Bills: {dataRoot}/bills<br/>
                       • Expenses: {dataRoot}/expenses
@@ -163,6 +228,48 @@ export default function OnboardingPage() {
                 )}
               </div>
             </div>
+
+            {showResetOption && hasBackup && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+                <h3 className="text-sm font-semibold text-yellow-800 mb-2">
+                  ⚠️ Reset Database from Backup
+                </h3>
+                <p className="text-xs text-yellow-700 mb-3">
+                  This will permanently delete your current database and restore all data from the backup file found in this folder. This action cannot be undone.
+                </p>
+                {backupSummary && (
+                  <div className="bg-yellow-100 rounded-md p-2 mb-3">
+                    <div className="text-xs text-yellow-800">
+                      <strong>Backup Details:</strong><br/>
+                      Date: {backupSummary.backupDate ? new Date(backupSummary.backupDate).toLocaleDateString() : 'Unknown'}<br/>
+                      {backupSummary.tables && (
+                        <>
+                          Clients: {backupSummary.tables.clients || 0}<br/>
+                          Bills: {backupSummary.tables.invoices || 0}<br/>
+                          Expenses: {backupSummary.tables.expenses || 0}<br/>
+                          Automation Rules: {backupSummary.tables.automation_rules || 0}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleResetDatabase}
+                    disabled={loading}
+                    className="px-3 py-1 bg-red-600 text-white text-xs rounded-md hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {loading ? 'Resetting...' : 'Reset Database'}
+                  </button>
+                  <button
+                    onClick={() => setShowResetOption(false)}
+                    className="px-3 py-1 bg-gray-300 text-gray-700 text-xs rounded-md hover:bg-gray-400"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-3">
               <button

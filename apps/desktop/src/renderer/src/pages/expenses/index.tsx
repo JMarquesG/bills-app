@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../../components/PageHeader'
+import { SmartSearch } from '../../components/SmartSearch'
 
 interface Expense {
   id: string
@@ -16,12 +18,28 @@ interface Expense {
   updatedAt: string
 }
 
+interface SearchFilters {
+  text: string
+  year?: string
+  vendor?: string
+  category?: string
+}
+
+interface Predictor {
+  id: string
+  label: string
+  type: 'year' | 'vendor' | 'category' | 'custom'
+  value: string
+  count?: number
+}
+
 export default function ExpensesPage() {
+  const navigate = useNavigate()
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [filteredExpenses, setFilteredExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [formData, setFormData] = useState({
     vendor: '',
     category: '',
@@ -31,35 +49,134 @@ export default function ExpensesPage() {
   })
   const [formLoading, setFormLoading] = useState(false)
   const [extracting, setExtracting] = useState(false)
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({ text: '' })
+  const [fileAttached, setFileAttached] = useState(false)
+  const [attachedFilePath, setAttachedFilePath] = useState<string | null>(null)
 
   useEffect(() => {
     fetchExpenses()
   }, [])
 
-  // Populate form when editing
-  useEffect(() => {
-    if (editingExpense) {
-      setFormData({
-        vendor: editingExpense.vendor || '',
-        category: editingExpense.category || '',
-        date: (editingExpense.date || '').slice(0, 10),
-        amount: editingExpense.amount || '',
-        notes: editingExpense.notes || ''
+  // Generate predictors from expenses data
+  const predictors = useMemo(() => {
+    const preds: Predictor[] = []
+    
+    // Years
+    const years = new Set<string>()
+    const vendors = new Map<string, number>()
+    const categories = new Map<string, number>()
+    
+    expenses.forEach(expense => {
+      // Extract year
+      const year = new Date(expense.date).getFullYear().toString()
+      years.add(year)
+      
+      // Count vendors
+      vendors.set(expense.vendor, (vendors.get(expense.vendor) || 0) + 1)
+      
+      // Count categories
+      categories.set(expense.category, (categories.get(expense.category) || 0) + 1)
+    })
+    
+    // Add year predictors
+    Array.from(years).sort().reverse().forEach(year => {
+      const count = expenses.filter(e => new Date(e.date).getFullYear().toString() === year).length
+      preds.push({
+        id: `year-${year}`,
+        label: year,
+        type: 'year',
+        value: year,
+        count
       })
-      setShowForm(true)
-    }
-  }, [editingExpense])
+    })
+    
+    // Add vendor predictors (top 10)
+    Array.from(vendors.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .forEach(([vendor, count]) => {
+        preds.push({
+          id: `vendor-${vendor}`,
+          label: vendor,
+          type: 'vendor',
+          value: vendor,
+          count
+        })
+      })
+    
+    // Add category predictors
+    Array.from(categories.entries())
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([category, count]) => {
+        preds.push({
+          id: `category-${category}`,
+          label: category,
+          type: 'category',
+          value: category,
+          count
+        })
+      })
+    
+    return preds
+  }, [expenses])
 
-  const startEdit = (expense: Expense) => {
-    // Open the form immediately and populate fields
-    setShowForm(true)
-    setEditingExpense(expense)
-    setError(null)
+  // Filter expenses based on search
+  useEffect(() => {
+    let filtered = [...expenses]
+    
+    // Text search (fuzzy search across multiple fields)
+    if (searchFilters.text) {
+      const query = searchFilters.text.toLowerCase()
+      filtered = filtered.filter(expense => {
+        const searchableText = [
+          expense.vendor,
+          expense.category,
+          expense.notes || '',
+          expense.amount,
+          new Date(expense.date).toLocaleDateString()
+        ].join(' ').toLowerCase()
+        
+        // Simple fuzzy search - check if all characters exist in order
+        let queryIndex = 0
+        for (let i = 0; i < searchableText.length && queryIndex < query.length; i++) {
+          if (searchableText[i] === query[queryIndex]) {
+            queryIndex++
+          }
+        }
+        return queryIndex === query.length || searchableText.includes(query)
+      })
+    }
+    
+    // Year filter
+    if (searchFilters.year) {
+      filtered = filtered.filter(expense => 
+        new Date(expense.date).getFullYear().toString() === searchFilters.year
+      )
+    }
+    
+    // Vendor filter
+    if (searchFilters.vendor) {
+      filtered = filtered.filter(expense => 
+        expense.vendor === searchFilters.vendor
+      )
+    }
+    
+    // Category filter
+    if (searchFilters.category) {
+      filtered = filtered.filter(expense => 
+        expense.category === searchFilters.category
+      )
+    }
+    
+    setFilteredExpenses(filtered)
+  }, [expenses, searchFilters])
+
+  const handleSearch = (query: string, filters: SearchFilters) => {
+    setSearchFilters(filters)
   }
 
   const cancelForm = () => {
     setShowForm(false)
-    setEditingExpense(null)
     setFormData({
       vendor: '',
       category: '',
@@ -68,6 +185,123 @@ export default function ExpensesPage() {
       notes: ''
     })
     setError(null)
+    setFileAttached(false)
+    setAttachedFilePath(null)
+  }
+
+  const handleAutofillFromFile = async () => {
+    if (!window.api || !attachedFilePath) return
+
+    setExtracting(true)
+    setError(null)
+    try {
+      const res = await window.api.analyzeDocument({
+        filePath: attachedFilePath,
+        documentType: 'expense'
+      })
+      if (res.error) {
+        setError(res.error.message)
+        setExtracting(false)
+        return
+      }
+      const fields = res.fields as Partial<typeof formData> | undefined
+      if (fields) {
+        setFormData(prev => ({
+          ...prev,
+          vendor: fields.vendor ?? prev.vendor,
+          category: fields.category ?? prev.category,
+          date: fields.date ?? prev.date,
+          amount: fields.amount ?? prev.amount,
+          notes: fields.notes ?? prev.notes
+        }))
+        
+        const backendText = res.backend === 'openai' ? 'OpenAI' : 'Ollama'
+        alert(`Form fields updated using ${backendText}`)
+      }
+    } catch (e) {
+      setError('Failed to extract fields from file')
+    }
+    setExtracting(false)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!window.api) return
+
+    setFormLoading(true)
+
+    try {
+      const expenseData = {
+        vendor: formData.vendor.trim(),
+        category: formData.category.trim(),
+        date: formData.date,
+        amount: formData.amount.trim(),
+        notes: formData.notes.trim() || undefined
+      }
+
+      // Add new expense
+      const result = await window.api.addExpense(expenseData)
+
+      if (result.error) {
+        setError(result.error.message)
+        setFormLoading(false)
+        return
+      }
+
+      // Reset form and refresh list
+      cancelForm()
+      fetchExpenses()
+    } catch (error) {
+      setError('Failed to add expense')
+    }
+    
+    setFormLoading(false)
+  }
+
+  const handleAttachFile = async () => {
+    if (!window.api) return
+
+    try {
+      // Create expense first so we have an ID
+      const addRes = await window.api.addExpense({
+        vendor: formData.vendor.trim() || 'Unknown Vendor',
+        category: formData.category.trim() || 'Other',
+        date: formData.date,
+        amount: formData.amount.trim() || '0',
+        notes: formData.notes.trim() || undefined
+      })
+      if (addRes.error || !addRes.id) {
+        setError(addRes.error?.message || 'Failed to create expense before attaching file')
+        return
+      }
+      const expenseId = addRes.id
+      
+      // Refresh list so the new expense appears
+      fetchExpenses()
+
+      const result = await window.api.attachExpenseFile(expenseId)
+      
+      if (result.error) {
+        setError(result.error.message)
+        return
+      }
+      
+      if (!result.canceled && result.filePath) {
+        // Update the expenses list
+        setExpenses(prev => prev.map(e => 
+          e.id === expenseId 
+            ? { ...e, filePath: result.filePath as string }
+            : e
+        ))
+        
+        setFileAttached(true)
+        setAttachedFilePath(result.filePath as string)
+        alert('File attached successfully!')
+
+      }
+    } catch (error) {
+      setError('Failed to attach file')
+    }
   }
 
   const fetchExpenses = async () => {
@@ -90,139 +324,6 @@ export default function ExpensesPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!window.api) return
-
-    setFormLoading(true)
-
-    try {
-      const expenseData = {
-        vendor: formData.vendor.trim(),
-        category: formData.category.trim(),
-        date: formData.date,
-        amount: formData.amount.trim(),
-        notes: formData.notes.trim() || undefined
-      }
-
-      let result
-      if (editingExpense) {
-        // Update existing expense
-        result = await window.api.updateExpense({
-          id: editingExpense.id,
-          ...expenseData
-        })
-      } else {
-        // Add new expense
-        result = await window.api.addExpense(expenseData)
-      }
-
-      if (result.error) {
-        setError(result.error.message)
-        setFormLoading(false)
-        return
-      }
-
-      // Reset form and refresh list
-      cancelForm()
-      fetchExpenses()
-    } catch (error) {
-      setError(editingExpense ? 'Failed to update expense' : 'Failed to add expense')
-    }
-    
-    setFormLoading(false)
-  }
-
-
-  const handleAttachFile = async () => {
-    if (!window.api) return
-
-    try {
-      // If we're creating a new expense, create it first so we have an ID
-      let expenseId = editingExpense?.id
-      if (!expenseId) {
-        const addRes = await window.api.addExpense({
-          vendor: formData.vendor.trim() || 'Unknown Vendor',
-          category: formData.category.trim() || 'Other',
-          date: formData.date,
-          amount: formData.amount.trim() || '0',
-          notes: formData.notes.trim() || undefined
-        })
-        if (addRes.error || !addRes.id) {
-          setError(addRes.error?.message || 'Failed to create expense before attaching file')
-          return
-        }
-        expenseId = addRes.id
-        // Reflect creation in local state
-        setEditingExpense(prev => prev || ({
-          id: expenseId!,
-          vendor: formData.vendor,
-          category: formData.category,
-          date: formData.date,
-          amount: formData.amount,
-          currency: 'EUR',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        } as unknown as Expense))
-        setShowForm(true)
-        // Refresh list so the new expense appears
-        fetchExpenses()
-      }
-
-      const result = await window.api.attachExpenseFile(expenseId!)
-      
-      if (result.error) {
-        setError(result.error.message)
-        return
-      }
-      
-      if (!result.canceled && result.filePath) {
-        // Update the editing expense with the new file path
-        setEditingExpense(prev => prev ? { ...prev, filePath: result.filePath } : prev)
-        
-        // Update the expenses list
-        setExpenses(prev => prev.map(e => 
-          e.id === expenseId 
-            ? { ...e, filePath: result.filePath as string }
-            : e
-        ))
-        
-        alert('File attached successfully!')
-      }
-    } catch (error) {
-      setError('Failed to attach file')
-    }
-  }
-
-  const handleAutofillFromFile = async () => {
-    if (!window.api || !editingExpense) return
-    if (!editingExpense.filePath) return
-
-    setExtracting(true)
-    try {
-      const res = await window.api.extractExpenseFields(editingExpense.id)
-      if (res.error) {
-        setError(res.error.message)
-        setExtracting(false)
-        return
-      }
-      const fields = (res as any).fields as Partial<typeof formData> | undefined
-      if (fields) {
-        setFormData(prev => ({
-          vendor: fields.vendor ?? prev.vendor,
-          category: fields.category ?? prev.category,
-          date: fields.date ?? prev.date,
-          amount: fields.amount ?? prev.amount,
-          notes: fields.notes ?? prev.notes
-        }))
-        alert('Form fields updated using AI document analysis.')
-      }
-    } catch (e) {
-      setError('Failed to extract fields from file')
-    }
-    setExtracting(false)
   }
 
   const handleDelete = async (expense: Expense) => {
@@ -297,14 +398,24 @@ export default function ExpensesPage() {
         )}
       />
 
-      {/* Add/Edit Expense Form */}
+      {/* Search */}
+      <div className="mb-6">
+        <SmartSearch
+          placeholder="Search expenses by vendor, category, amount..."
+          onSearch={handleSearch}
+          predictors={predictors}
+          className="max-w-md"
+        />
+      </div>
+
+      {/* Add Expense Form */}
       {showForm && (
         <div className="apple-card bg-card p-6 mb-6 animate-fade-in">
           {error && (
             <div className="bg-destructive/10 border-destructive/20 rounded-xl p-3 mb-6 text-destructive text-sm">{error}</div>
           )}
           <h3 className="text-lg font-semibold text-card-foreground mb-5">
-            {editingExpense ? 'Edit Expense' : 'Add New Expense'}
+            Add New Expense
           </h3>
           
           <form onSubmit={handleSubmit}>
@@ -387,43 +498,48 @@ export default function ExpensesPage() {
               />
             </div>
 
+
             <div className="flex gap-3 pt-2 border-t  mt-4">
               <button type="button" onClick={cancelForm} className="btn btn-secondary btn-lg">Cancel</button>
-              {
-                <button 
-                  type="button" 
-                  onClick={handleAttachFile}
-                  className="btn btn-outline btn-lg"
-                >
-                  <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                  </svg>
-                  Attach File
-                </button>
-              }
-              {editingExpense && editingExpense.filePath && (
-                <button 
-                  type="button" 
-                  onClick={handleAutofillFromFile}
-                  className="btn btn-outline btn-lg"
-                  disabled={extracting}
-                  title="Analyze the attached document with AI to extract expense details"
-                >
-                  <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  {extracting ? 'AI Analyzing...' : 'AI Extract Fields'}
-                </button>
-              )}
+              <button 
+                type="button" 
+                onClick={handleAutofillFromFile}
+                disabled={!fileAttached || extracting}
+                className="btn btn-outline btn-lg"
+              >
+                {extracting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    AI Analysis
+                  </>
+                )}
+              </button>
+              <button 
+                type="button" 
+                onClick={handleAttachFile}
+                className="btn btn-outline btn-lg"
+              >
+                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+                Add with File
+              </button>
               <button
                 type="submit"
                 disabled={formLoading}
                 className="btn btn-primary btn-lg"
               >
-                {formLoading 
-                  ? (editingExpense ? 'Saving...' : 'Adding...')
-                  : (editingExpense ? 'Save Changes' : 'Add Expense')
-                }
+                {formLoading ? 'Adding...' : 'Add Expense'}
               </button>
             </div>
           </form>
@@ -455,6 +571,20 @@ export default function ExpensesPage() {
               Add Expense
             </button>
           </div>
+        ) : filteredExpenses.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="rounded-full bg-muted p-6 mb-4">
+              <svg className="h-12 w-12 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold mb-2 text-card-foreground">
+              No expenses found
+            </h3>
+            <p className="text-muted-foreground mb-4 max-w-sm">
+              No expenses match your search criteria. Try adjusting your search terms.
+            </p>
+          </div>
         ) : (
           <table className="w-full border-collapse">
             <thead>
@@ -468,7 +598,7 @@ export default function ExpensesPage() {
               </tr>
             </thead>
             <tbody>
-              {expenses.map(expense => (
+              {filteredExpenses.map(expense => (
                 <tr key={expense.id} className="border-b  hover:bg-muted/50 transition-colors">
                   <td className="p-3 text-card-foreground">
                     {formatDate(expense.date)}
@@ -498,6 +628,16 @@ export default function ExpensesPage() {
                   </td>
                   <td className="p-3">
                     <div className="flex gap-2">
+                      <button 
+                        className="btn btn-outline btn-sm"
+                        onClick={() => navigate(`/expenses/${expense.id}/view`)}
+                      >
+                        <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        View
+                      </button>
                       {expense.filePath && (
                         <button 
                           className="btn btn-outline btn-sm"
@@ -515,17 +655,18 @@ export default function ExpensesPage() {
                       >
                         <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0016.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                          </svg>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         )}
       </div>
+
     </div>
   )
 }

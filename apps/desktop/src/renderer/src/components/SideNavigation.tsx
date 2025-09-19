@@ -78,7 +78,7 @@ export function SideNavigation({ isCollapsed, onToggleCollapse }: SideNavigation
   const isActive = (href: string) => location.pathname === href;
 
   return (
-    <div className={`fixed left-0 top-8 h-screen bg-background z-50 ${
+    <div className={`fixed left-0 top-10 h-screen bg-background z-40 ${
       isCollapsed ? 'w-17' : 'w-64 transition-all duration-300 ease-in-out'
     }`}>
       <div className="flex flex-col h-full">

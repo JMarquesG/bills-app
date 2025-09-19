@@ -32,6 +32,10 @@ export default function SettingsPage() {
   const [openAiKey, setOpenAiKey] = useState('')
   const [openAiLoading, setOpenAiLoading] = useState(false)
 
+  // AI backend state
+  const [aiBackend, setAiBackend] = useState<'local' | 'openai' | 'ollama'>('local')
+  const [aiBackendLoading, setAiBackendLoading] = useState(false)
+
   useEffect(() => {
     loadCurrentSettings()
   }, [])
@@ -63,6 +67,13 @@ export default function SettingsPage() {
         console.log('🔑 Key loaded, length:', keyResult.key?.length || 0)
       } else {
         console.log('🔑 Error loading key:', keyResult.error)
+      }
+
+      // Load AI backend configuration
+      const aiStatusResult = await window.api.getAIStatus()
+      if (!aiStatusResult.error) {
+        const backend = aiStatusResult.backend === 'local' ? 'ollama' : aiStatusResult.backend
+        setAiBackend(backend as any)
       }
     } catch (error) {
       setErrors(['Failed to load settings'])
@@ -222,6 +233,37 @@ export default function SettingsPage() {
       setErrors(['Failed to save OpenAI key'])
     } finally {
       setOpenAiLoading(false)
+    }
+  }
+
+  const handleChangeAIBackend = async (newBackend: 'local' | 'openai' | 'ollama') => {
+    setAiBackendLoading(true)
+    setErrors([])
+    try {
+      if (!window.api) return
+      const prev = aiBackend
+      // Optimistic UI update
+      setAiBackend(newBackend)
+      const res = await window.api.setAIBackend(newBackend)
+      if (res.error) {
+        // Revert on error
+        setAiBackend(prev)
+        setErrors([res.error.message])
+      } else {
+        setSuccess(`AI backend changed to ${newBackend === 'openai' ? 'OpenAI' : newBackend === 'ollama' ? 'Ollama' : 'Local AI'}`)
+        // Reconcile with persisted value
+        const status = await window.api.getAIStatus()
+        if (!status.error && status.backend) {
+          setAiBackend(status.backend as any)
+        }
+        setTimeout(() => setSuccess(null), 3000)
+      }
+    } catch (error) {
+      // Revert on exception
+      setAiBackend(prev => prev)
+      setErrors(['Failed to change AI backend'])
+    } finally {
+      setAiBackendLoading(false)
     }
   }
 
@@ -402,14 +444,81 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* OpenAI API Key */}
+        {/* AI Backend Selection */}
         <div className="apple-card bg-card p-6">
           <h2 className="text-xl font-semibold mb-4 text-card-foreground">
-            OpenAI API Key
+            AI Backend
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Used for AI-powered autofill of expense forms. The key is encrypted with your app password and stored locally.
+            Choose which AI system to use for document analysis and field extraction.
           </p>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                aiBackend === 'openai' 
+                  ? 'border-primary bg-primary/10 ring-2 ring-primary/20' 
+                  : 'border-input hover:border-primary/50'
+              }`}
+              onClick={() => !aiBackendLoading && handleChangeAIBackend('openai')}>
+                <div className="flex items-center space-x-3">
+                  <div className="flex-shrink-0">
+                    <div className={`w-4 h-4 rounded-full border-2 ${
+                      aiBackend === 'openai' ? 'bg-primary border-primary' : 'border-input'
+                    }`}>
+                      {aiBackend === 'openai' && <div className="w-2 h-2 bg-white rounded-full mx-auto mt-0.5"></div>}
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium text-card-foreground">OpenAI</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Higher accuracy • Requires API key • Cloud-based
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                aiBackend === 'ollama' 
+                  ? 'border-primary bg-primary/10 ring-2 ring-primary/20' 
+                  : 'border-input hover:border-primary/50'
+              }`}
+              onClick={() => !aiBackendLoading && handleChangeAIBackend('ollama')}>
+                <div className="flex items-center space-x-3">
+                  <div className="flex-shrink-0">
+                    <div className={`w-4 h-4 rounded-full border-2 ${
+                      aiBackend === 'ollama' ? 'bg-primary border-primary' : 'border-input'
+                    }`}>
+                      {aiBackend === 'ollama' && <div className="w-2 h-2 bg-white rounded-full mx-auto mt-0.5"></div>}
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium text-card-foreground">Ollama (Gemma3 4B)</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Local service • Downloads model on first run • Requires Ollama installed
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {aiBackendLoading && (
+              <div className="text-sm text-muted-foreground text-center">
+                Updating AI backend...
+              </div>
+            )}
+          
+          </div>
+        </div>
+
+        {/* OpenAI API Key */}
+        {aiBackend === 'openai' && (
+          <div className="apple-card bg-card p-6">
+            <h2 className="text-xl font-semibold mb-4 text-card-foreground">
+              OpenAI API Key
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Required for OpenAI-powered document analysis. The key is encrypted with your app password and stored locally.
+            </p>
           <form onSubmit={handleSaveOpenAIKey} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-1">
@@ -434,6 +543,7 @@ export default function SettingsPage() {
             </div>
           </form>
         </div>
+        )}
 
         {/* SMTP Email Configuration */}
         <div className="apple-card bg-card p-6">

@@ -180,13 +180,16 @@ export default function NewBillPage() {
     setExtracting(true)
     setErrors([])
     try {
-      const res = await window.api.extractBillFields(pickedFile)
+      const res = await window.api.analyzeDocument({
+        filePath: pickedFile,
+        documentType: 'bill'
+      })
       if (res.error) {
         setErrors([res.error.message])
         setExtracting(false)
         return
       }
-      const fields = (res as any).fields as Partial<typeof formData> | undefined
+      const fields = res.fields as Partial<typeof formData> | undefined
       if (fields) {
         setFormData(prev => ({
           ...prev,
@@ -199,7 +202,10 @@ export default function NewBillPage() {
           description: fields.description ?? prev.description,
           notes: fields.notes ?? prev.notes
         }))
-        alert('Form fields updated using AI document analysis.')
+        
+        const backendText = res.backend === 'openai' ? 'OpenAI' : 'Local AI'
+        const confidenceText = res.confidence ? ` (${Math.round(res.confidence * 100)}% confidence)` : ''
+        alert(`Form fields updated using ${backendText} document analysis${confidenceText}.`)
       }
     } catch (e) {
       setErrors(['Failed to extract fields from file'])
@@ -208,12 +214,12 @@ export default function NewBillPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
+    <div className="min-h-screen bg-background p-3 sm:p-6">
       <PageHeader title="New Bill" subtitle="Create a new invoice for your client" />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
       {/* Form */}
-      <div className="apple-card bg-card p-8 max-w-2xl w-full">
+      <div className="apple-card bg-card p-4 sm:p-6 lg:p-8 w-full min-w-0">
         {errors.length > 0 && (
           <div className="bg-destructive/10 border-destructive/20 rounded-xl p-3 mb-6">
             {errors.map((error, idx) => (
@@ -228,9 +234,9 @@ export default function NewBillPage() {
           <div className="grid gap-5">
             {/* Client */}
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <label className="block text-sm font-medium text-card-foreground">Client</label>
-                <div className="text-xs text-muted-foreground flex gap-3">
+                <div className="text-xs text-muted-foreground flex flex-wrap gap-2 sm:gap-3">
                   <button type="button" onClick={() => navigate('/clients/new')} className="btn btn-link">Add client</button>
                   <button type="button" onClick={() => navigate('/clients')} className="btn btn-link">Manage clients</button>
                 </div>
@@ -252,15 +258,15 @@ export default function NewBillPage() {
                     value={formData.clientName}
                     onChange={(e) => handleInputChange('clientName', e.target.value)}
                     placeholder="Or type client name"
-                    className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                    className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   />
                 )}
               </div>
             </div>
 
             {/* Invoice Number, Issue Date, Expected Payment */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="sm:col-span-2 lg:col-span-1">
                 <label className="block text-sm font-medium mb-2 text-card-foreground">
                   Invoice Number *
                 </label>
@@ -269,7 +275,7 @@ export default function NewBillPage() {
                   value={formData.number}
                   onChange={(e) => handleInputChange('number', e.target.value)}
                   placeholder="INV-2024-01-001"
-                  className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
@@ -282,7 +288,7 @@ export default function NewBillPage() {
                   type="date"
                   value={formData.issueDate}
                   onChange={(e) => handleInputChange('issueDate', e.target.value)}
-                  className="w-full p-3  rounded-xl text-base bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full p-3 rounded-xl text-base bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
@@ -295,14 +301,14 @@ export default function NewBillPage() {
                   type="date"
                   value={formData.expectedPaymentDate}
                   onChange={(e) => handleInputChange('expectedPaymentDate', e.target.value)}
-                  className="w-full p-3  rounded-xl text-base bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full p-3 rounded-xl text-base bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </div>
             </div>
 
             {/* Amount and Currency */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="sm:col-span-3">
                 <label className="block text-sm font-medium mb-2 text-card-foreground">
                   Amount *
                 </label>
@@ -312,7 +318,7 @@ export default function NewBillPage() {
                   value={formData.amount}
                   onChange={(e) => handleInputChange('amount', e.target.value)}
                   placeholder="0.00"
-                  className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   required
                 />
               </div>
@@ -324,7 +330,7 @@ export default function NewBillPage() {
                 <select
                   value={formData.currency}
                   onChange={(e) => handleInputChange('currency', e.target.value)}
-                  className="w-full p-3  rounded-xl text-base bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full p-3 rounded-xl text-base bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                 >
                   <option value="EUR">EUR</option>
                   <option value="USD">USD</option>
@@ -341,23 +347,38 @@ export default function NewBillPage() {
                 <button type="button" onClick={() => setPdfSource('file')} className={`btn btn-sm ${pdfSource==='file' ? 'btn-selected' : ''}`}>Use existing PDF</button>
               </div>
               {pdfSource === 'file' && (
-                <div className="mt-3 flex items-center gap-3">
-                  <button type="button" onClick={pickPdf} className="btn btn-secondary btn-sm">Pick PDF</button>
+                <div className="mt-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button type="button" onClick={pickPdf} className="btn btn-secondary btn-sm shrink-0">Pick PDF</button>
+                    {pickedFile && (
+                      <button 
+                        type="button" 
+                        onClick={handleAutofillFromFile}
+                        className="btn btn-outline btn-sm shrink-0"
+                        disabled={extracting}
+                        title="Analyze the selected PDF with AI to extract bill details"
+                      >
+                        <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        {extracting ? 'AI Analyzing...' : 'AI Extract Fields'}
+                      </button>
+                    )}
+                  </div>
                   {pickedFile && (
-                    <button 
-                      type="button" 
-                      onClick={handleAutofillFromFile}
-                      className="btn btn-outline btn-sm"
-                      disabled={extracting}
-                      title="Analyze the selected PDF with AI to extract bill details"
-                    >
-                      <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      {extracting ? 'AI Analyzing...' : 'AI Extract Fields'}
-                    </button>
+                    <div className="bg-muted/30 rounded-lg p-3 min-w-0">
+                      <div className="text-xs text-muted-foreground mb-1">Selected file:</div>
+                      <div 
+                        className="text-sm text-foreground font-mono break-all text-ellipsis overflow-hidden"
+                        title={pickedFile}
+                      >
+                        {pickedFile}
+                      </div>
+                    </div>
                   )}
-                  <span className="text-sm text-muted-foreground truncate max-w-[60ch]">{pickedFile || 'No file selected'}</span>
+                  {!pickedFile && (
+                    <div className="text-sm text-muted-foreground italic">No file selected</div>
+                  )}
                 </div>
               )}
               {pdfSource === 'auto' && (
@@ -377,7 +398,7 @@ export default function NewBillPage() {
                 onChange={(e) => handleInputChange('description', e.target.value)}
                 placeholder="Service or product description"
                 rows={2}
-                className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y"
+                className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y whitespace-pre-wrap break-words"
                 required
               />
             </div>
@@ -392,7 +413,7 @@ export default function NewBillPage() {
                 onChange={(e) => handleInputChange('notes', e.target.value)}
                 placeholder="Additional observations (optional)"
                 rows={3}
-                className="w-full p-3  rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y"
+                className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y whitespace-pre-wrap break-words"
               />
             </div>
 

@@ -55,6 +55,7 @@ export const bootstrapSQL = `
     company_profile text, -- JSON string: seller profile (name, address, tax ids, bank)
     smtp_config text, -- JSON string: { host: string, port: number, secure: boolean, user: string, password: string } or null
     openai_key text, -- JSON string: { algo: string, iv: string, cipherText: string } or null
+    ai_backend text default 'local', -- AI backend: 'local' | 'openai' | 'ollama'
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
   );
