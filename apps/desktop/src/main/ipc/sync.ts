@@ -5,8 +5,7 @@ import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/
 import { decryptSecret, hasSessionKey } from '../secrets'
 import { promises as fs } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { Client as PgClient } from 'pg'
-import { createHash } from 'node:crypto'
+let currentClientConfig: { url: string; key: string } | null = null
 
 type ConflictPolicy = 'cloud_wins' | 'local_wins'
 
@@ -36,9 +35,17 @@ async function getSupabaseConfig(): Promise<{ url: string; key: string; enabled:
 async function ensureSupabase(): Promise<SupabaseClient> {
   const cfg = await getSupabaseConfig()
   if (!cfg) throw new Error('Supabase not configured or disabled')
-  if (!supabase) {
+
+  if (
+    !supabase ||
+    !currentClientConfig ||
+    currentClientConfig.url !== cfg.url ||
+    currentClientConfig.key !== cfg.key
+  ) {
     supabase = createSupabaseClient(cfg.url, cfg.key)
+    currentClientConfig = { url: cfg.url, key: cfg.key }
   }
+
   return supabase
 }
 
