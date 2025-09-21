@@ -21,12 +21,16 @@ nsis:
   createDesktopShortcut: always
 mac:
   icon: src/renderer/logo.png
+  category: public.app-category.finance
   target:
     - target: dmg
       arch:
         - x64
         - arm64
   artifactName: ${productName}-${version}-${arch}.${ext}
+  darkModeSupport: true
+  hardenedRuntime: false
+  gatekeeperAssess: false
 win:
   target:
     - target: nsis
