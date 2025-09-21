@@ -79,7 +79,16 @@ declare global {
       // OpenAI Key management
       getOpenAIKey: () => Promise<ApiResponse<{ key: string | null }>>
       saveOpenAIKey: (apiKey: string) => Promise<ApiResponse>
-      
+
+      // Supabase / Sync
+      getSupabaseConfig: () => Promise<ApiResponse<{ config: { url: string | null; key: string | null; enabled: boolean; lastSyncAt?: string | null; conflictPolicy: 'cloud_wins' | 'local_wins' } }>>
+      saveSupabaseConfig: (config: { url: string; key: string; enabled?: boolean; conflictPolicy?: 'cloud_wins' | 'local_wins' }) => Promise<ApiResponse>
+      getSyncStatus: () => Promise<ApiResponse<{ configured: boolean; enabled: boolean; conflictPolicy: 'cloud_wins' | 'local_wins'; lastSyncAt?: string | null }>>
+      runSync: () => Promise<ApiResponse<{ pulled: number; pushed: number; files: { uploaded: number; downloaded: number } }>>
+      setSyncConflictPolicy: (policy: 'cloud_wins' | 'local_wins') => Promise<ApiResponse>
+      diagnoseSync: () => Promise<ApiResponse<{ report: any }>>
+      initializeSupabase: () => Promise<ApiResponse>
+
       // System operations
       openPath: (path: string) => Promise<ApiResponse>
       

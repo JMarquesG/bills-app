@@ -61,7 +61,6 @@ export const bootstrapSQL = `
     supabase_sync_enabled boolean default false, -- Whether cloud sync is enabled
     last_sync_at timestamp, -- Last successful sync timestamp (UTC)
     supabase_conflict_policy text default 'cloud_wins', -- 'cloud_wins' | 'local_wins'
-    supabase_db_url text, -- Optional direct Postgres URL for schema bootstrap
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
   );

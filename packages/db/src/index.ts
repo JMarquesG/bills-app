@@ -259,9 +259,6 @@ async function runSimpleMigrations() {
       await currentClient.query(`
         ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_conflict_policy text DEFAULT 'cloud_wins';
       `);
-      await currentClient.query(`
-        ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_db_url text;
-      `);
       console.log('✅ Ensured Supabase sync columns exist on setting');
     } catch (error) {
       console.log('ℹ️ Could not add Supabase columns - likely already exist');
