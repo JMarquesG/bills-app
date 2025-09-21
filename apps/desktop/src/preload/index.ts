@@ -189,6 +189,22 @@ const api = {
   sendInvoiceEmail: (data: { billId: string; subject: string; htmlBody: string; attachmentPath?: string }): Promise<ApiResponse> =>
     ipcRenderer.invoke('email:sendInvoice', data),
 
+  // Supabase / Sync
+  getSupabaseConfig: (): Promise<ApiResponse<{ config: { url: string | null; key: string | null; enabled: boolean; lastSyncAt?: string | null; conflictPolicy: 'cloud_wins' | 'local_wins' } }>> =>
+    ipcRenderer.invoke('settings:getSupabaseConfig'),
+  saveSupabaseConfig: (config: { url: string; key: string; enabled?: boolean; conflictPolicy?: 'cloud_wins' | 'local_wins' }): Promise<ApiResponse> =>
+    ipcRenderer.invoke('settings:saveSupabaseConfig', config),
+  getSyncStatus: (): Promise<ApiResponse<{ configured: boolean; enabled: boolean; conflictPolicy: 'cloud_wins' | 'local_wins'; lastSyncAt?: string | null }>> =>
+    ipcRenderer.invoke('sync:getStatus'),
+  runSync: (): Promise<ApiResponse<{ pulled: number; pushed: number; files: { uploaded: number; downloaded: number } }>> =>
+    ipcRenderer.invoke('sync:run'),
+  setSyncConflictPolicy: (policy: 'cloud_wins' | 'local_wins'): Promise<ApiResponse> =>
+    ipcRenderer.invoke('sync:setConflictPolicy', { policy }),
+  diagnoseSync: (): Promise<ApiResponse<{ report: any }>> =>
+    ipcRenderer.invoke('sync:diagnose'),
+  initializeSupabase: (): Promise<ApiResponse> =>
+    ipcRenderer.invoke('sync:initializeSupabase'),
+
   // Automation operations
   getAutomationRules: (): Promise<ApiResponse<{ rules: any[] }>> =>
     ipcRenderer.invoke('automation:getRules'),

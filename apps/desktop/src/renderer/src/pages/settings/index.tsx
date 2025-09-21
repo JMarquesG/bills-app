@@ -36,6 +36,15 @@ export default function SettingsPage() {
   const [aiBackend, setAiBackend] = useState<'local' | 'openai' | 'ollama'>('local')
   const [aiBackendLoading, setAiBackendLoading] = useState(false)
 
+  // Supabase sync state
+  const [sbUrl, setSbUrl] = useState('')
+  const [sbKey, setSbKey] = useState('')
+  const [sbEnabled, setSbEnabled] = useState(false)
+  const [sbConflict, setSbConflict] = useState<'cloud_wins' | 'local_wins'>('cloud_wins')
+  const [syncStatus, setSyncStatus] = useState<{ configured: boolean; enabled: boolean; lastSyncAt?: string | null } | null>(null)
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [savingSupabase, setSavingSupabase] = useState(false)
+
   useEffect(() => {
     loadCurrentSettings()
   }, [])
@@ -59,14 +68,9 @@ export default function SettingsPage() {
       }
 
       // Load OpenAI key (requires unlock)
-      console.log('🔑 Loading OpenAI key in settings...')
       const keyResult = await window.api.getOpenAIKey()
-      console.log('🔑 Key result:', keyResult)
       if (!keyResult.error) {
         setOpenAiKey(keyResult.key || '')
-        console.log('🔑 Key loaded, length:', keyResult.key?.length || 0)
-      } else {
-        console.log('🔑 Error loading key:', keyResult.error)
       }
 
       // Load AI backend configuration
@@ -74,6 +78,19 @@ export default function SettingsPage() {
       if (!aiStatusResult.error) {
         const backend = aiStatusResult.backend === 'local' ? 'ollama' : aiStatusResult.backend
         setAiBackend(backend as any)
+      }
+
+      // Load Supabase config & sync status
+      const sbCfg = await window.api.getSupabaseConfig()
+      if (!sbCfg.error && sbCfg.config) {
+        setSbUrl(sbCfg.config.url || '')
+        setSbKey(sbCfg.config.key || '')
+        setSbEnabled(!!sbCfg.config.enabled)
+        setSbConflict((sbCfg.config.conflictPolicy as any) || 'cloud_wins')
+      }
+      const st = await window.api.getSyncStatus()
+      if (!st.error) {
+        setSyncStatus({ configured: !!st.configured, enabled: !!st.enabled, lastSyncAt: st.lastSyncAt })
       }
     } catch (error) {
       setErrors(['Failed to load settings'])
@@ -264,6 +281,64 @@ export default function SettingsPage() {
       setErrors(['Failed to change AI backend'])
     } finally {
       setAiBackendLoading(false)
+    }
+  }
+
+  const handleSaveSupabase = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingSupabase(true)
+    setErrors([])
+    try {
+      const res = await window.api.saveSupabaseConfig({ url: sbUrl.trim(), key: sbKey.trim(), enabled: sbEnabled, conflictPolicy: sbConflict })
+      if (res.error) {
+        setErrors([res.error.message])
+      } else {
+        setSuccess('Supabase configuration saved')
+        const st = await window.api.getSyncStatus()
+        if (!st.error) setSyncStatus({ configured: !!st.configured, enabled: !!st.enabled, lastSyncAt: st.lastSyncAt })
+        setTimeout(() => setSuccess(null), 3000)
+      }
+    } catch (error) {
+      setErrors(['Failed to save Supabase configuration'])
+    } finally {
+      setSavingSupabase(false)
+    }
+  }
+
+
+  const handleRunSync = async () => {
+    setSyncBusy(true)
+    setErrors([])
+    try {
+      const res = await window.api.runSync()
+      if (res.error) {
+        setErrors([res.error.message])
+      } else {
+        setSuccess(`Sync completed • Pushed ${res.pushed}, Pulled ${res.pulled}, Files ↑${res.files?.uploaded}/↓${res.files?.downloaded}`)
+        const st = await window.api.getSyncStatus()
+        if (!st.error) setSyncStatus({ configured: !!st.configured, enabled: !!st.enabled, lastSyncAt: st.lastSyncAt })
+        setTimeout(() => setSuccess(null), 4000)
+      }
+    } catch (error) {
+      setErrors(['Failed to run sync'])
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
+  const handleSetConflictPolicy = async (policy: 'cloud_wins' | 'local_wins') => {
+    setErrors([])
+    try {
+      const res = await window.api.setSyncConflictPolicy(policy)
+      if (res.error) {
+        setErrors([res.error.message])
+      } else {
+        setSbConflict(policy)
+        setSuccess(`Conflict policy set to: ${policy === 'cloud_wins' ? 'Cloud overrides Local' : 'Local overrides Cloud'}`)
+        setTimeout(() => setSuccess(null), 3000)
+      }
+    } catch (error) {
+      setErrors(['Failed to set conflict policy'])
     }
   }
 
@@ -544,6 +619,79 @@ export default function SettingsPage() {
           </form>
         </div>
         )}
+
+        {/* Supabase Cloud Sync */}
+        <div className="apple-card bg-card p-6">
+          <h2 className="text-xl font-semibold mb-4 text-card-foreground">Cloud Sync (Supabase)</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Keep your local data in sync with Supabase. Configure your project URL and key. When conflicts occur, choose whether <strong>Cloud overrides Local</strong> or <strong>Local overrides Cloud</strong>.
+          </p>
+          <form onSubmit={handleSaveSupabase} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-card-foreground mb-1">Project URL *</label>
+              <input
+                type="url"
+                value={sbUrl}
+                onChange={(e) => setSbUrl(e.target.value)}
+                placeholder="https://your-project.supabase.co"
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-card-foreground mb-1">Anon/Service Key *</label>
+              <input
+                type="password"
+                value={sbKey}
+                onChange={(e) => setSbKey(e.target.value)}
+                placeholder="supabase key"
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                required
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="sb-enabled"
+                checked={sbEnabled}
+                onChange={(e) => setSbEnabled(e.target.checked)}
+                className="rounded border-input text-primary focus:ring-ring"
+              />
+              <label htmlFor="sb-enabled" className="text-sm text-card-foreground">Enable cloud sync</label>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-card-foreground mb-1">Conflict policy</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button type="button" onClick={() => handleSetConflictPolicy('cloud_wins')} className={`p-3 border rounded-md text-left ${sbConflict === 'cloud_wins' ? 'border-primary bg-primary/10' : 'border-input'}`}>
+                  <div className="font-medium text-card-foreground">Cloud overrides Local</div>
+                  <div className="text-xs text-muted-foreground mt-1">If a record differs, the cloud version replaces local.</div>
+                </button>
+                <button type="button" onClick={() => handleSetConflictPolicy('local_wins')} className={`p-3 border rounded-md text-left ${sbConflict === 'local_wins' ? 'border-primary bg-primary/10' : 'border-input'}`}>
+                  <div className="font-medium text-card-foreground">Local overrides Cloud</div>
+                  <div className="text-xs text-muted-foreground mt-1">If a record differs, your local version replaces cloud.</div>
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" className="btn btn-primary" disabled={savingSupabase || !sbUrl.trim() || !sbKey.trim()}>
+                {savingSupabase ? 'Saving...' : 'Save Supabase' }
+              </button>
+              <button type="button" className="btn" disabled={syncBusy || !sbEnabled} onClick={handleRunSync}>
+                {syncBusy ? 'Syncing…' : 'Run Sync Now'}
+              </button>
+            </div>
+            {syncStatus && (
+              <div className="text-xs text-muted-foreground">
+                <div>Status: {syncStatus.configured ? (syncStatus.enabled ? 'Configured • Enabled' : 'Configured • Disabled') : 'Not configured'}</div>
+                <div>Last sync: {syncStatus.lastSyncAt ? new Date(syncStatus.lastSyncAt).toLocaleString() : 'Never'}</div>
+              </div>
+            )}
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800">
+              When resolving conflicts, the non-selected side's differing records will be overwritten. No deletions happen automatically; this only updates records that differ. File sync mirrors new/updated files in both directions.
+            </div>
+          </form>
+
+        </div>
 
         {/* SMTP Email Configuration */}
         <div className="apple-card bg-card p-6">

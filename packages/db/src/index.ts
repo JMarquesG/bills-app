@@ -240,6 +240,32 @@ async function runSimpleMigrations() {
     } catch (error) {
       console.log('ℹ️ Could not add ai_backend column - likely already exists');
     }
+
+    // Add Supabase sync columns if missing
+    try {
+      const currentClient = getClient();
+      await currentClient.query(`
+        ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_url text;
+      `);
+      await currentClient.query(`
+        ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_key text;
+      `);
+      await currentClient.query(`
+        ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_sync_enabled boolean DEFAULT false;
+      `);
+      await currentClient.query(`
+        ALTER TABLE setting ADD COLUMN IF NOT EXISTS last_sync_at timestamp;
+      `);
+      await currentClient.query(`
+        ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_conflict_policy text DEFAULT 'cloud_wins';
+      `);
+      await currentClient.query(`
+        ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_db_url text;
+      `);
+      console.log('✅ Ensured Supabase sync columns exist on setting');
+    } catch (error) {
+      console.log('ℹ️ Could not add Supabase columns - likely already exist');
+    }
     
   } catch (error) {
     console.log('ℹ️ Migrations skipped - database may be freshly initialized');

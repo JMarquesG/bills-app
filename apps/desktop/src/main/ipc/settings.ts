@@ -29,6 +29,13 @@ const openAiKeySchema = z.object({
   apiKey: z.string().min(10)
 })
 
+const supabaseConfigSchema = z.object({
+  url: z.string().url(),
+  key: z.string().min(10),
+  enabled: z.boolean().optional().default(true),
+  conflictPolicy: z.enum(['cloud_wins', 'local_wins']).optional().default('cloud_wins')
+})
+
 // Helper functions
 async function ensureDirectoryExists(dirPath: string): Promise<void> {
   try {
@@ -624,6 +631,64 @@ ipcMain.handle('settings:saveSmtpConfig', async (_e, config: unknown) => {
   }
 })
 
+// Supabase configuration handlers
+ipcMain.handle('settings:getSupabaseConfig', async () => {
+  try {
+    const result = await client.query('SELECT supabase_url, supabase_key, supabase_sync_enabled, last_sync_at, supabase_conflict_policy FROM setting WHERE id = 1')
+    const row = (result.rows?.[0] as any) || {}
+    let key: string | null = null
+    if (row.supabase_key) {
+      try {
+        const payload = JSON.parse(row.supabase_key)
+        if (payload.encrypted === false) {
+          key = payload.plainText
+        } else if (payload.encrypted === true) {
+          if (!hasSessionKey()) {
+            return { error: { code: 'LOCKED', message: 'Unlock with password to access Supabase key' } }
+          }
+          key = decryptSecret(payload.iv, payload.cipherText)
+        }
+      } catch {
+        key = null
+      }
+    }
+    return { config: { url: row.supabase_url || null, key, enabled: !!row.supabase_sync_enabled, lastSyncAt: row.last_sync_at || null, conflictPolicy: row.supabase_conflict_policy || 'cloud_wins' } }
+  } catch (error) {
+    return { error: { code: 'GET_SUPABASE_CONFIG_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
+  }
+})
+
+ipcMain.handle('settings:saveSupabaseConfig', async (_e, data: unknown) => {
+  try {
+    const parsed = supabaseConfigSchema.parse(data)
+    const now = new Date().toISOString()
+    let keyPayload: string | null = null
+    if (parsed.key) {
+      if (hasSessionKey()) {
+        const enc = encryptSecret(parsed.key)
+        keyPayload = JSON.stringify({ encrypted: true, ...enc })
+      } else {
+        keyPayload = JSON.stringify({ encrypted: false, plainText: parsed.key })
+      }
+    }
+    // Update or insert
+    const updateResult = await client.query(`
+      UPDATE setting
+      SET supabase_url = $1, supabase_key = $2, supabase_sync_enabled = $3, supabase_conflict_policy = $4, updated_at = $5
+      WHERE id = 1
+    `, [parsed.url, keyPayload, parsed.enabled, parsed.conflictPolicy, now])
+    if (updateResult.affectedRows === 0) {
+      await client.query(`
+        INSERT INTO setting (id, supabase_url, supabase_key, supabase_sync_enabled, supabase_conflict_policy, created_at, updated_at)
+        VALUES (1, $1, $2, $3, $4, $5, $5)
+      `, [parsed.url, keyPayload, parsed.enabled, parsed.conflictPolicy, now])
+    }
+    return { ok: true }
+  } catch (error) {
+    return { error: { code: 'SAVE_SUPABASE_CONFIG_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
+  }
+})
+
 // OpenAI API key secure storage
 ipcMain.handle('settings:getOpenAIKey', async () => {
   try {
@@ -750,5 +815,6 @@ ipcMain.handle('settings:saveOpenAIKey', async (_e, data: unknown) => {
   }
 })
 
+// Supabase DB URL handlers removed - no longer needed
 
 export { getDataRoot, getBillsFolder, getExpensesFolder, ensureDirectoryExists, loadConfigFromFolder }

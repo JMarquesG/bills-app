@@ -56,6 +56,12 @@ export const bootstrapSQL = `
     smtp_config text, -- JSON string: { host: string, port: number, secure: boolean, user: string, password: string } or null
     openai_key text, -- JSON string: { algo: string, iv: string, cipherText: string } or null
     ai_backend text default 'local', -- AI backend: 'local' | 'openai' | 'ollama'
+    supabase_url text, -- Cloud sync: Supabase project URL
+    supabase_key text, -- Cloud sync: encrypted anon/service key payload JSON
+    supabase_sync_enabled boolean default false, -- Whether cloud sync is enabled
+    last_sync_at timestamp, -- Last successful sync timestamp (UTC)
+    supabase_conflict_policy text default 'cloud_wins', -- 'cloud_wins' | 'local_wins'
+    supabase_db_url text, -- Optional direct Postgres URL for schema bootstrap
     created_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp
   );
