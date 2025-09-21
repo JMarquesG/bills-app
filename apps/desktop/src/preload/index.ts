@@ -21,6 +21,7 @@ export interface ExpenseInput {
   category: string
   invoiceId?: string
   notes?: string
+  filePath?: string
 }
 
 export interface ApiResponse<T = any> {
@@ -93,6 +94,9 @@ const api = {
   
   attachExpenseFile: (expenseId: string): Promise<ApiResponse<{ filePath?: string }>> =>
     ipcRenderer.invoke('expense:attachFile', expenseId),
+
+  selectExpenseFile: (): Promise<ApiResponse<{ filePath?: string }>> =>
+    ipcRenderer.invoke('expense:selectFile'),
 
   extractExpenseFields: (expenseId: string): Promise<ApiResponse<{ fields?: { vendor?: string; category?: string; date?: string; amount?: string; notes?: string } }>> =>
     ipcRenderer.invoke('expense:extractFields', expenseId),
@@ -185,21 +189,32 @@ const api = {
   saveSmtpConfig: (config: any): Promise<ApiResponse> =>
     ipcRenderer.invoke('settings:saveSmtpConfig', config),
 
+  // SQL Script Download
+  downloadSQLScript: (): Promise<ApiResponse<{ filePath?: string; size?: number }>> =>
+    ipcRenderer.invoke('settings:downloadSQLScript'),
+
   // Email operations
   sendInvoiceEmail: (data: { billId: string; subject: string; htmlBody: string; attachmentPath?: string }): Promise<ApiResponse> =>
     ipcRenderer.invoke('email:sendInvoice', data),
 
   // Supabase / Sync
-  getSupabaseConfig: (): Promise<ApiResponse<{ config: { url: string | null; key: string | null; enabled: boolean; lastSyncAt?: string | null; conflictPolicy: 'cloud_wins' | 'local_wins' } }>> =>
+  getSupabaseConfig: (): Promise<ApiResponse<{ config: { url: string | null; key: string | null; enabled: boolean; lastSyncAt?: string | null } }>> =>
     ipcRenderer.invoke('settings:getSupabaseConfig'),
-  saveSupabaseConfig: (config: { url: string; key: string; enabled?: boolean; conflictPolicy?: 'cloud_wins' | 'local_wins' }): Promise<ApiResponse> =>
+  saveSupabaseConfig: (config: { url: string; key: string; enabled?: boolean }): Promise<ApiResponse> =>
     ipcRenderer.invoke('settings:saveSupabaseConfig', config),
-  getSyncStatus: (): Promise<ApiResponse<{ configured: boolean; enabled: boolean; conflictPolicy: 'cloud_wins' | 'local_wins'; lastSyncAt?: string | null }>> =>
+  getSyncStatus: (): Promise<ApiResponse<{ configured: boolean; enabled: boolean; lastSyncAt?: string | null }>> =>
     ipcRenderer.invoke('sync:getStatus'),
   runSync: (): Promise<ApiResponse<{ pulled: number; pushed: number; files: { uploaded: number; downloaded: number } }>> =>
     ipcRenderer.invoke('sync:run'),
-  setSyncConflictPolicy: (policy: 'cloud_wins' | 'local_wins'): Promise<ApiResponse> =>
-    ipcRenderer.invoke('sync:setConflictPolicy', { policy }),
+  // New explicit sync ops
+  mergePull: (): Promise<ApiResponse<{ pulled: number; pushed: number }>> =>
+    ipcRenderer.invoke('sync:mergePull'),
+  mergePush: (): Promise<ApiResponse<{ pulled: number; pushed: number }>> =>
+    ipcRenderer.invoke('sync:mergePush'),
+  forcePull: (): Promise<ApiResponse<{ pulled: number; pushed: number }>> =>
+    ipcRenderer.invoke('sync:forcePull'),
+  forcePush: (): Promise<ApiResponse<{ pulled: number; pushed: number }>> =>
+    ipcRenderer.invoke('sync:forcePush'),
   diagnoseSync: (): Promise<ApiResponse<{ report: any }>> =>
     ipcRenderer.invoke('sync:diagnose'),
   initializeSupabase: (): Promise<ApiResponse> =>

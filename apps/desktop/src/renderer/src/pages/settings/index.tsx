@@ -40,10 +40,12 @@ export default function SettingsPage() {
   const [sbUrl, setSbUrl] = useState('')
   const [sbKey, setSbKey] = useState('')
   const [sbEnabled, setSbEnabled] = useState(false)
-  const [sbConflict, setSbConflict] = useState<'cloud_wins' | 'local_wins'>('cloud_wins')
   const [syncStatus, setSyncStatus] = useState<{ configured: boolean; enabled: boolean; lastSyncAt?: string | null } | null>(null)
   const [syncBusy, setSyncBusy] = useState(false)
   const [savingSupabase, setSavingSupabase] = useState(false)
+
+  // SQL download state
+  const [downloadingSQL, setDownloadingSQL] = useState(false)
 
   useEffect(() => {
     loadCurrentSettings()
@@ -86,7 +88,6 @@ export default function SettingsPage() {
         setSbUrl(sbCfg.config.url || '')
         setSbKey(sbCfg.config.key || '')
         setSbEnabled(!!sbCfg.config.enabled)
-        setSbConflict((sbCfg.config.conflictPolicy as any) || 'cloud_wins')
       }
       const st = await window.api.getSyncStatus()
       if (!st.error) {
@@ -289,7 +290,7 @@ export default function SettingsPage() {
     setSavingSupabase(true)
     setErrors([])
     try {
-      const res = await window.api.saveSupabaseConfig({ url: sbUrl.trim(), key: sbKey.trim(), enabled: sbEnabled, conflictPolicy: sbConflict })
+      const res = await window.api.saveSupabaseConfig({ url: sbUrl.trim(), key: sbKey.trim(), enabled: sbEnabled })
       if (res.error) {
         setErrors([res.error.message])
       } else {
@@ -326,21 +327,57 @@ export default function SettingsPage() {
     }
   }
 
-  const handleSetConflictPolicy = async (policy: 'cloud_wins' | 'local_wins') => {
+
+  const handleDownloadSQLScript = async () => {
+    setDownloadingSQL(true)
     setErrors([])
     try {
-      const res = await window.api.setSyncConflictPolicy(policy)
+      const res = await window.api.downloadSQLScript()
       if (res.error) {
         setErrors([res.error.message])
+      } else if (res.canceled) {
+        // User canceled the download dialog
+        return
       } else {
-        setSbConflict(policy)
-        setSuccess(`Conflict policy set to: ${policy === 'cloud_wins' ? 'Cloud overrides Local' : 'Local overrides Cloud'}`)
-        setTimeout(() => setSuccess(null), 3000)
+        setSuccess(`SQL script downloaded successfully! File size: ${Math.round((res.size || 0) / 1024)} KB`)
+        setTimeout(() => setSuccess(null), 5000)
       }
     } catch (error) {
-      setErrors(['Failed to set conflict policy'])
+      setErrors(['Failed to download SQL script'])
+    } finally {
+      setDownloadingSQL(false)
     }
   }
+
+  // Sync operation handlers
+  const [syncOpBusy, setSyncOpBusy] = useState<string | null>(null)
+
+  const runOp = async (label: string, fn: () => Promise<any>) => {
+    setSyncOpBusy(label)
+    setErrors([])
+    try {
+      const res = await fn()
+      if (res?.error) {
+        setErrors([res.error.message])
+      } else {
+        const pushed = res?.pushed ?? 0
+        const pulled = res?.pulled ?? 0
+        setSuccess(`${label} completed • Pushed ${pushed}, Pulled ${pulled}`)
+        const st = await window.api.getSyncStatus()
+        if (!st.error) setSyncStatus({ configured: !!st.configured, enabled: !!st.enabled, lastSyncAt: st.lastSyncAt })
+        setTimeout(() => setSuccess(null), 4000)
+      }
+    } catch (e) {
+      setErrors([`Failed to ${label.toLowerCase()}`])
+    } finally {
+      setSyncOpBusy(null)
+    }
+  }
+
+  const handleForcePull = () => runOp('Force Pull', () => window.api.forcePull())
+  const handleMergePull = () => runOp('Merge Pull', () => window.api.mergePull())
+  const handleMergePush = () => runOp('Merge Push', () => window.api.mergePush())
+  const handleForcePush = () => runOp('Force Push', () => window.api.forcePush())
 
   if (loading) {
     return (
@@ -659,25 +696,34 @@ export default function SettingsPage() {
               />
               <label htmlFor="sb-enabled" className="text-sm text-card-foreground">Enable cloud sync</label>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-card-foreground mb-1">Conflict policy</label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <button type="button" onClick={() => handleSetConflictPolicy('cloud_wins')} className={`p-3 border rounded-md text-left ${sbConflict === 'cloud_wins' ? 'border-primary bg-primary/10' : 'border-input'}`}>
-                  <div className="font-medium text-card-foreground">Cloud overrides Local</div>
-                  <div className="text-xs text-muted-foreground mt-1">If a record differs, the cloud version replaces local.</div>
-                </button>
-                <button type="button" onClick={() => handleSetConflictPolicy('local_wins')} className={`p-3 border rounded-md text-left ${sbConflict === 'local_wins' ? 'border-primary bg-primary/10' : 'border-input'}`}>
-                  <div className="font-medium text-card-foreground">Local overrides Cloud</div>
-                  <div className="text-xs text-muted-foreground mt-1">If a record differs, your local version replaces cloud.</div>
-                </button>
-              </div>
-            </div>
             <div className="flex gap-2">
               <button type="submit" className="btn btn-primary" disabled={savingSupabase || !sbUrl.trim() || !sbKey.trim()}>
                 {savingSupabase ? 'Saving...' : 'Save Supabase' }
               </button>
-              <button type="button" className="btn" disabled={syncBusy || !sbEnabled} onClick={handleRunSync}>
-                {syncBusy ? 'Syncing…' : 'Run Sync Now'}
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                disabled={downloadingSQL} 
+                onClick={handleDownloadSQLScript}
+                title="Download complete database schema SQL script for Supabase setup"
+              >
+                {downloadingSQL ? 'Generating...' : '📄 Download SQL Script'}
+              </button>
+            </div>
+
+            {/* Sync Controls */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <button type="button" className="btn" disabled={!!syncOpBusy || !sbEnabled} onClick={handleMergePull}>
+                {syncOpBusy === 'Merge Pull' ? 'Merging…' : 'Merge Pull'}
+              </button>
+              <button type="button" className="btn" disabled={!!syncOpBusy || !sbEnabled} onClick={handleMergePush}>
+                {syncOpBusy === 'Merge Push' ? 'Merging…' : 'Merge Push'}
+              </button>
+              <button type="button" className="btn btn-destructive" disabled={!!syncOpBusy || !sbEnabled} onClick={handleForcePull}>
+                {syncOpBusy === 'Force Pull' ? 'Replacing…' : 'Force Pull (Replace Local)'}
+              </button>
+              <button type="button" className="btn btn-destructive" disabled={!!syncOpBusy || !sbEnabled} onClick={handleForcePush}>
+                {syncOpBusy === 'Force Push' ? 'Replacing…' : 'Force Push (Replace Cloud)'}
               </button>
             </div>
             {syncStatus && (
@@ -686,9 +732,6 @@ export default function SettingsPage() {
                 <div>Last sync: {syncStatus.lastSyncAt ? new Date(syncStatus.lastSyncAt).toLocaleString() : 'Never'}</div>
               </div>
             )}
-            <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800">
-              When resolving conflicts, the non-selected side's differing records will be overwritten. No deletions happen automatically; this only updates records that differ. File sync mirrors new/updated files in both directions.
-            </div>
           </form>
 
         </div>

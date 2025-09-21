@@ -14,7 +14,8 @@ const addExpenseSchema = z.object({
   vendor: z.string().min(1),
   category: z.string().min(1),
   invoiceId: z.string().optional(),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  filePath: z.string().optional() // Temporary file path for copying
 })
 
 const updateExpenseSchema = z.object({
@@ -33,10 +34,46 @@ ipcMain.handle('expense:add', async (_, input) => {
     const data = addExpenseSchema.parse(input)
     
     const expenseId = generateId()
+    
+    // Handle file copying if filePath is provided
+    let finalFilePath = null
+    if (data.filePath) {
+      try {
+        // Get data root and expenses folder
+        const dataRoot = await getDataRoot()
+        if (!dataRoot) {
+          return { error: { code: 'NO_DATA_ROOT', message: 'Data root folder not configured' } }
+        }
+        
+        const expensesRoot = await getExpensesFolder(dataRoot)
+        await ensureDirectoryExists(expensesRoot)
+        
+        // Create filename: YYYY/MM/YYYY-MM-DD__expense-<id>__<vendor>.ext
+        const expenseDate = new Date(data.date)
+        const year = expenseDate.getFullYear()
+        const month = String(expenseDate.getMonth() + 1).padStart(2, '0')
+        const extension = extname(data.filePath)
+        
+        const fileName = `${year}-${month}-${String(expenseDate.getDate()).padStart(2, '0')}__expense-${expenseId}__${data.vendor.replace(/[^a-zA-Z0-9]/g, '_')}${extension}`
+        const destFolder = join(expensesRoot, year.toString(), month)
+        const destFile = join(destFolder, fileName)
+        
+        // Ensure directory exists
+        await ensureDirectoryExists(destFolder)
+        
+        // Copy file
+        await fs.copyFile(data.filePath, destFile)
+        finalFilePath = destFile
+      } catch (fileError) {
+        console.error('Failed to copy file:', fileError)
+        // Continue without file if copying fails
+      }
+    }
+    
     await client.query(
-      `INSERT INTO expense (id, invoice_id, vendor, category, date, amount, currency, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'EUR', $7, current_timestamp, current_timestamp)`,
-      [expenseId, data.invoiceId || null, data.vendor, data.category, data.date, data.amount, data.notes || null]
+      `INSERT INTO expense (id, invoice_id, vendor, category, date, amount, currency, notes, file_path, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'EUR', $7, $8, current_timestamp, current_timestamp)`,
+      [expenseId, data.invoiceId || null, data.vendor, data.category, data.date, data.amount, data.notes || null, finalFilePath]
     )
     
     // Create automatic backup after successful expense creation
@@ -175,6 +212,42 @@ ipcMain.handle('expense:attachFile', async (_, expenseId: string) => {
     return { ok: true, filePath: destFile }
   } catch (error) {
     return createError('ATTACH_FILE_ERROR', error)
+  }
+})
+
+// New handler for selecting file before creating expense
+ipcMain.handle('expense:selectFile', async () => {
+  try {
+    // Get data root and expenses folder
+    const dataRoot = await getDataRoot()
+    if (!dataRoot) {
+      return { error: { code: 'NO_DATA_ROOT', message: 'Data root folder not configured' } }
+    }
+    
+    const expensesRoot = await getExpensesFolder(dataRoot)
+    await ensureDirectoryExists(expensesRoot)
+    
+    // Show file picker
+    const result = await dialog.showOpenDialog({
+      title: 'Select Document to Attach',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Documents & Images', extensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'bmp', 'tiff'] },
+        { name: 'PDF Files', extensions: ['pdf'] },
+        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tiff'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    
+    if (result.canceled) {
+      return { canceled: true }
+    }
+    
+    const sourceFile = result.filePaths[0]
+    
+    return { ok: true, filePath: sourceFile }
+  } catch (error) {
+    return createError('SELECT_FILE_ERROR', error)
   }
 })
 

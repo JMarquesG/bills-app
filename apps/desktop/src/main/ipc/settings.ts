@@ -2,7 +2,7 @@ import { ipcMain, dialog, app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { z } from 'zod'
-import { client, resetConnection, checkForBackupFiles, resetAndRestoreDatabase, createDataBackup } from '@bills/db'
+import { client,  checkForBackupFiles, createDataBackup, getSQLScriptContent } from '@bills/db'
 import { encryptSecret, decryptSecret, hasSessionKey } from '../secrets'
 
 const companyProfileSchema = z.object({
@@ -32,8 +32,7 @@ const openAiKeySchema = z.object({
 const supabaseConfigSchema = z.object({
   url: z.string().url(),
   key: z.string().min(10),
-  enabled: z.boolean().optional().default(true),
-  conflictPolicy: z.enum(['cloud_wins', 'local_wins']).optional().default('cloud_wins')
+  enabled: z.boolean().optional().default(true)
 })
 
 // Helper functions
@@ -634,7 +633,7 @@ ipcMain.handle('settings:saveSmtpConfig', async (_e, config: unknown) => {
 // Supabase configuration handlers
 ipcMain.handle('settings:getSupabaseConfig', async () => {
   try {
-    const result = await client.query('SELECT supabase_url, supabase_key, supabase_sync_enabled, last_sync_at, supabase_conflict_policy FROM setting WHERE id = 1')
+    const result = await client.query('SELECT supabase_url, supabase_key, supabase_sync_enabled, last_sync_at FROM setting WHERE id = 1')
     const row = (result.rows?.[0] as any) || {}
     let key: string | null = null
     if (row.supabase_key) {
@@ -652,7 +651,7 @@ ipcMain.handle('settings:getSupabaseConfig', async () => {
         key = null
       }
     }
-    return { config: { url: row.supabase_url || null, key, enabled: !!row.supabase_sync_enabled, lastSyncAt: row.last_sync_at || null, conflictPolicy: row.supabase_conflict_policy || 'cloud_wins' } }
+    return { config: { url: row.supabase_url || null, key, enabled: !!row.supabase_sync_enabled, lastSyncAt: row.last_sync_at || null } }
   } catch (error) {
     return { error: { code: 'GET_SUPABASE_CONFIG_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
   }
@@ -674,14 +673,14 @@ ipcMain.handle('settings:saveSupabaseConfig', async (_e, data: unknown) => {
     // Update or insert
     const updateResult = await client.query(`
       UPDATE setting
-      SET supabase_url = $1, supabase_key = $2, supabase_sync_enabled = $3, supabase_conflict_policy = $4, updated_at = $5
+      SET supabase_url = $1, supabase_key = $2, supabase_sync_enabled = $3, updated_at = $4
       WHERE id = 1
-    `, [parsed.url, keyPayload, parsed.enabled, parsed.conflictPolicy, now])
+    `, [parsed.url, keyPayload, parsed.enabled, now])
     if (updateResult.affectedRows === 0) {
       await client.query(`
-        INSERT INTO setting (id, supabase_url, supabase_key, supabase_sync_enabled, supabase_conflict_policy, created_at, updated_at)
-        VALUES (1, $1, $2, $3, $4, $5, $5)
-      `, [parsed.url, keyPayload, parsed.enabled, parsed.conflictPolicy, now])
+        INSERT INTO setting (id, supabase_url, supabase_key, supabase_sync_enabled, created_at, updated_at)
+        VALUES (1, $1, $2, $3, $4, $4)
+      `, [parsed.url, keyPayload, parsed.enabled, now])
     }
     return { ok: true }
   } catch (error) {
@@ -816,5 +815,49 @@ ipcMain.handle('settings:saveOpenAIKey', async (_e, data: unknown) => {
 })
 
 // Supabase DB URL handlers removed - no longer needed
+
+// SQL Script Download Handler
+ipcMain.handle('settings:downloadSQLScript', async () => {
+  try {
+    console.log('📄 Generating SQL script for download...')
+    
+    // Generate the complete SQL script
+    const sqlContent = await getSQLScriptContent()
+    
+    // Show save dialog
+    const result = await dialog.showSaveDialog({
+      title: 'Save Database Schema SQL Script',
+      defaultPath: 'bills-app-database-schema.sql',
+      filters: [
+        { name: 'SQL Files', extensions: ['sql'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      message: 'Choose where to save the database schema SQL script'
+    })
+    
+    if (result.canceled || !result.filePath) {
+      return { canceled: true }
+    }
+    
+    // Write the SQL content to the selected file
+    await fs.writeFile(result.filePath, sqlContent, 'utf-8')
+    
+    console.log('✅ SQL script saved to:', result.filePath)
+    
+    return { 
+      success: true, 
+      filePath: result.filePath,
+      size: sqlContent.length
+    }
+  } catch (error) {
+    console.error('❌ Failed to download SQL script:', error)
+    return { 
+      error: { 
+        code: 'DOWNLOAD_SQL_ERROR', 
+        message: error instanceof Error ? error.message : 'Unknown error' 
+      } 
+    }
+  }
+})
 
 export { getDataRoot, getBillsFolder, getExpensesFolder, ensureDirectoryExists, loadConfigFromFolder }

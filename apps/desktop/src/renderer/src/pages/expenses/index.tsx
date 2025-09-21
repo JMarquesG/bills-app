@@ -236,7 +236,8 @@ export default function ExpensesPage() {
         category: formData.category.trim(),
         date: formData.date,
         amount: formData.amount.trim(),
-        notes: formData.notes.trim() || undefined
+        notes: formData.notes.trim() || undefined,
+        filePath: attachedFilePath || undefined
       }
 
       // Add new expense
@@ -262,24 +263,7 @@ export default function ExpensesPage() {
     if (!window.api) return
 
     try {
-      // Create expense first so we have an ID
-      const addRes = await window.api.addExpense({
-        vendor: formData.vendor.trim() || 'Unknown Vendor',
-        category: formData.category.trim() || 'Other',
-        date: formData.date,
-        amount: formData.amount.trim() || '0',
-        notes: formData.notes.trim() || undefined
-      })
-      if (addRes.error || !addRes.id) {
-        setError(addRes.error?.message || 'Failed to create expense before attaching file')
-        return
-      }
-      const expenseId = addRes.id
-      
-      // Refresh list so the new expense appears
-      fetchExpenses()
-
-      const result = await window.api.attachExpenseFile(expenseId)
+      const result = await window.api.selectExpenseFile()
       
       if (result.error) {
         setError(result.error.message)
@@ -287,20 +271,12 @@ export default function ExpensesPage() {
       }
       
       if (!result.canceled && result.filePath) {
-        // Update the expenses list
-        setExpenses(prev => prev.map(e => 
-          e.id === expenseId 
-            ? { ...e, filePath: result.filePath as string }
-            : e
-        ))
-        
         setFileAttached(true)
         setAttachedFilePath(result.filePath as string)
-        alert('File attached successfully!')
-
+        alert('File selected successfully! You can now add the expense.')
       }
     } catch (error) {
-      setError('Failed to attach file')
+      setError('Failed to select file')
     }
   }
 
@@ -498,6 +474,20 @@ export default function ExpensesPage() {
               />
             </div>
 
+            {/* File attachment status */}
+            {fileAttached && attachedFilePath && (
+              <div className="mb-5 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <svg className="h-4 w-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">
+                    File attached: {attachedFilePath.split('/').pop()}
+                  </span>
+                </div>
+              </div>
+            )}
+
 
             <div className="flex gap-3 pt-2 border-t  mt-4">
               <button type="button" onClick={cancelForm} className="btn btn-secondary btn-lg">Cancel</button>
@@ -527,12 +517,12 @@ export default function ExpensesPage() {
               <button 
                 type="button" 
                 onClick={handleAttachFile}
-                className="btn btn-outline btn-lg"
+                className={`btn btn-lg ${fileAttached ? 'btn-emerald' : 'btn-outline'}`}
               >
                 <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                 </svg>
-                Add with File
+                {fileAttached ? 'Change File' : 'Attach File'}
               </button>
               <button
                 type="submit"

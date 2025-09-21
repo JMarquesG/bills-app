@@ -1,8 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
-import { drizzle } from 'drizzle-orm/pglite';
 import { bootstrapSQL } from './schema';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
+import { exec } from "child_process";
 
 /** Resolve DB directory:
  * - DEV: ./pgdata (repo root)
@@ -256,9 +256,7 @@ async function runSimpleMigrations() {
       await currentClient.query(`
         ALTER TABLE setting ADD COLUMN IF NOT EXISTS last_sync_at timestamp;
       `);
-      await currentClient.query(`
-        ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_conflict_policy text DEFAULT 'cloud_wins';
-      `);
+      // Conflict policy removed - local changes always take precedence
       await currentClient.query(`
         ALTER TABLE setting ADD COLUMN IF NOT EXISTS supabase_db_url text;
       `);
@@ -552,3 +550,15 @@ export async function createAutoBackupIfPossible(): Promise<void> {
     console.log('ℹ️ Automatic backup failed but continuing:', error instanceof Error ? error.message : 'Unknown backup error');
   }
 }
+
+export async function migrateSupabaseSchema() {
+  await exec('npx supabase db push');
+}
+
+// Export SQL generation functions
+export { 
+  generateCompleteSQLScript, 
+  saveSQLScript, 
+  getSQLScriptContent, 
+  getMigrationInfo 
+} from './sql-generator';

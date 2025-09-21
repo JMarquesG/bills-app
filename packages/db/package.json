@@ -4,11 +4,14 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -w -p tsconfig.json"
+    "build": "npm run generate-sql && tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json",
+    "generate-sql": "node -e \"require('./dist/sql-generator.js').saveSQLScript('./dist/complete-schema.sql')\"",
+    "prebuild": "tsc -p tsconfig.json --skipLibCheck"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.2.17",
+    "@supabase/supabase-js": "^2.39.0",
     "drizzle-orm": "0.44.5",
     "zod": "^3.23.8"
   },

@@ -16,6 +16,7 @@
     "@ai-sdk/openai": "^2.0.31",
     "@bills/db": "*",
     "@electron-toolkit/utils": "^4.0.0",
+    "@radix-ui/react-icons": "^1.3.2",
     "@supabase/supabase-js": "^2.57.4",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^7.0.1",
