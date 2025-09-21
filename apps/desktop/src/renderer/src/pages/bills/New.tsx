@@ -202,10 +202,6 @@ export default function NewBillPage() {
           description: fields.description ?? prev.description,
           notes: fields.notes ?? prev.notes
         }))
-        
-        const backendText = res.backend === 'openai' ? 'OpenAI' : 'Local AI'
-        const confidenceText = res.confidence ? ` (${Math.round(res.confidence * 100)}% confidence)` : ''
-        alert(`Form fields updated using ${backendText} document analysis${confidenceText}.`)
       }
     } catch (e) {
       setErrors(['Failed to extract fields from file'])
