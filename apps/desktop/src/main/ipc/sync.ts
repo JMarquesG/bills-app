@@ -118,6 +118,33 @@ async function initSupabaseClient(): Promise<SupabaseClient | null> {
 
 // Local changes always take precedence - no conflict policy needed
 
+async function getSupabaseKeyRole(): Promise<string | null> {
+  try {
+    const result = await client.query(`SELECT supabase_key FROM setting WHERE id = 1`)
+    const raw = (result.rows?.[0] as any)?.supabase_key
+    if (!raw) return null
+    let key: string | null = null
+    try {
+      const payload = JSON.parse(raw)
+      if (payload.encrypted === false) key = payload.plainText
+      if (payload.encrypted === true) {
+        const { decryptSecret, hasSessionKey } = await import('../secrets')
+        if (!hasSessionKey()) return null
+        key = decryptSecret(payload.iv, payload.cipherText)
+      }
+    } catch {
+      key = raw
+    }
+    if (!key) return null
+    const parts = key.split('.')
+    if (parts.length < 2) return null
+    const body = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'))
+    return body?.role || null
+  } catch {
+    return null
+  }
+}
+
 // Sync clients
 async function syncClients(): Promise<{ pushed: number; pulled: number }> {
   if (!supabaseClient) throw new Error('Supabase client not initialized')
@@ -574,50 +601,73 @@ async function forcePull(): Promise<SyncResult> {
   }
 }
 
-// Force Push: replace cloud DB with local DB
+function formatSupabaseError(error: any, context: string): string {
+  try {
+    if (!error) return `${context}: Unknown error`
+    const { message, details, hint, code, status } = error as any
+    const parts = [context]
+    if (code) parts.push(`code=${code}`)
+    if (status) parts.push(`status=${status}`)
+    if (message) parts.push(message)
+    if (details) parts.push(details)
+    if (hint) parts.push(hint)
+    return parts.join(' • ')
+  } catch {
+    return `${context}: ${String(error)}`
+  }
+}
+
+// Force Push: replace cloud DB with local DB (clients, invoices, expenses)
 async function forcePush(): Promise<SyncResult> {
   try {
+    // Ensure service role for destructive ops
+    const role = await getSupabaseKeyRole()
+    if (role !== 'service_role') {
+      return { success: false, pushed: 0, pulled: 0, error: 'Force Push requires a Supabase service role key. Provide the service key in Settings.' }
+    }
+
     const supabaseClientInstance = await initSupabaseClient()
     if (!supabaseClientInstance) {
       return { success: false, pushed: 0, pulled: 0, error: 'Supabase not configured or enabled' }
     }
     supabaseClient = supabaseClientInstance
 
-    // Load local data
-    const [clients, invoices, expenses, settings] = await Promise.all([
+    // Load local data (skip setting to avoid schema/RLS issues on cloud)
+    const [clients, invoices, expenses] = await Promise.all([
       client.query('SELECT * FROM client'),
       client.query('SELECT * FROM invoice'),
-      client.query('SELECT * FROM expense'),
-      client.query('SELECT * FROM setting')
+      client.query('SELECT * FROM expense')
     ])
 
     // Delete remote in dependency order (children first)
-    await supabaseClient.from('automation_rule').delete().not('id', 'is', null)
-    await supabaseClient.from('expense').delete().not('id', 'is', null)
-    await supabaseClient.from('invoice').delete().not('id', 'is', null)
-    await supabaseClient.from('client').delete().not('id', 'is', null)
-    await supabaseClient.from('setting').delete().not('id', 'is', null)
+    // automation_rule may not exist remotely; ignore if it fails
+    try { await supabaseClient.from('automation_rule').delete().not('id', 'is', null) } catch {}
 
-    // Insert settings first
-    if (settings.rows?.length) {
-      const { error } = await supabaseClient.from('setting').insert(settings.rows as any)
-      if (error) throw error
-    }
+    const delExpense = await supabaseClient.from('expense').delete().not('id', 'is', null)
+    if (delExpense.error) return { success: false, pushed: 0, pulled: 0, error: formatSupabaseError(delExpense.error, 'Delete expense (cloud)') }
+
+    const delInvoice = await supabaseClient.from('invoice').delete().not('id', 'is', null)
+    if (delInvoice.error) return { success: false, pushed: 0, pulled: 0, error: formatSupabaseError(delInvoice.error, 'Delete invoice (cloud)') }
+
+    const delClient = await supabaseClient.from('client').delete().not('id', 'is', null)
+    if (delClient.error) return { success: false, pushed: 0, pulled: 0, error: formatSupabaseError(delClient.error, 'Delete client (cloud)') }
+
+    // Insert local into cloud
     if (clients.rows?.length) {
-      const { error } = await supabaseClient.from('client').insert(clients.rows as any)
-      if (error) throw error
+      const insClients = await supabaseClient.from('client').insert(clients.rows as any)
+      if (insClients.error) return { success: false, pushed: 0, pulled: 0, error: formatSupabaseError(insClients.error, 'Insert clients (cloud)') }
     }
     if (invoices.rows?.length) {
-      const { error } = await supabaseClient.from('invoice').insert(invoices.rows as any)
-      if (error) throw error
+      const insInvoices = await supabaseClient.from('invoice').insert(invoices.rows as any)
+      if (insInvoices.error) return { success: false, pushed: 0, pulled: 0, error: formatSupabaseError(insInvoices.error, 'Insert invoices (cloud)') }
     }
     if (expenses.rows?.length) {
-      const { error } = await supabaseClient.from('expense').insert(expenses.rows as any)
-      if (error) throw error
+      const insExpenses = await supabaseClient.from('expense').insert(expenses.rows as any)
+      if (insExpenses.error) return { success: false, pushed: 0, pulled: 0, error: formatSupabaseError(insExpenses.error, 'Insert expenses (cloud)') }
     }
 
     await client.query('UPDATE setting SET last_sync_at = current_timestamp WHERE id = 1')
-    const pushed = (clients.rows?.length || 0) + (invoices.rows?.length || 0) + (expenses.rows?.length || 0) + (settings.rows?.length || 0)
+    const pushed = (clients.rows?.length || 0) + (invoices.rows?.length || 0) + (expenses.rows?.length || 0)
     return { success: true, pushed, pulled: 0 }
   } catch (error) {
     return { success: false, pushed: 0, pulled: 0, error: error instanceof Error ? error.message : 'Unknown error' }
@@ -767,8 +817,12 @@ function cleanupSubscriptions(): void {
 }
 
 // IPC Handlers
-ipcMain.handle('sync:run', async (): Promise<SyncResult> => {
-  return await performSync()
+ipcMain.handle('sync:run', async () => {
+  const r = await performSync()
+  if (!r.success) {
+    return { error: { code: 'SYNC_ERROR', message: r.error || 'Unknown sync error' } }
+  }
+  return { pushed: r.pushed, pulled: r.pulled, files: r.files }
 })
 
 ipcMain.handle('sync:getStatus', async (): Promise<SyncStatus> => {
@@ -820,20 +874,36 @@ ipcMain.handle('sync:stopRealtime', async (): Promise<{ success: boolean }> => {
 })
 
 // New explicit sync operations
-ipcMain.handle('sync:mergePull', async (): Promise<SyncResult> => {
-  return await mergePull()
+ipcMain.handle('sync:mergePull', async () => {
+  const r = await mergePull()
+  if (!r.success) {
+    return { error: { code: 'SYNC_ERROR', message: r.error || 'Unknown sync error' } }
+  }
+  return { pushed: r.pushed, pulled: r.pulled }
 })
 
-ipcMain.handle('sync:mergePush', async (): Promise<SyncResult> => {
-  return await mergePush()
+ipcMain.handle('sync:mergePush', async () => {
+  const r = await mergePush()
+  if (!r.success) {
+    return { error: { code: 'SYNC_ERROR', message: r.error || 'Unknown sync error' } }
+  }
+  return { pushed: r.pushed, pulled: r.pulled }
 })
 
-ipcMain.handle('sync:forcePull', async (): Promise<SyncResult> => {
-  return await forcePull()
+ipcMain.handle('sync:forcePull', async () => {
+  const r = await forcePull()
+  if (!r.success) {
+    return { error: { code: 'SYNC_ERROR', message: r.error || 'Unknown sync error' } }
+  }
+  return { pushed: r.pushed, pulled: r.pulled }
 })
 
-ipcMain.handle('sync:forcePush', async (): Promise<SyncResult> => {
-  return await forcePush()
+ipcMain.handle('sync:forcePush', async () => {
+  const r = await forcePush()
+  if (!r.success) {
+    return { error: { code: 'SYNC_ERROR', message: r.error || 'Unknown sync error' } }
+  }
+  return { pushed: r.pushed, pulled: r.pulled }
 })
 
 // Cleanup on app exit
