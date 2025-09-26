@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, globalShortcut } from 'electron'
 import { join } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { is } from '@electron-toolkit/utils'
@@ -48,6 +48,7 @@ app.commandLine.appendSwitch('max-old-space-size', '4096'); // Increase heap siz
 app.commandLine.appendSwitch('max-semi-space-size', '128'); // Optimize garbage collection
 app.commandLine.appendSwitch('js-flags', '--expose-gc'); // Enable manual GC
 
+
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {
   try {
@@ -81,6 +82,22 @@ app.whenReady().then(async () => {
   })
 })
 
+// Disable refresh shortcuts while a window is focused
+app.on('browser-window-focus', () => {
+  globalShortcut.register('CommandOrControl+R', () => {
+    console.log('CommandOrControl+R is pressed: Shortcut Disabled')
+  })
+  globalShortcut.register('F5', () => {
+    console.log('F5 is pressed: Shortcut Disabled')
+  })
+})
+
+// Re-enable shortcuts when focus is lost
+app.on('browser-window-blur', () => {
+  globalShortcut.unregister('CommandOrControl+R')
+  globalShortcut.unregister('F5')
+})
+
 // Quit when all windows are closed, except on macOS
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -90,5 +107,6 @@ app.on('window-all-closed', () => {
 
 // Clean up when app is quitting
 app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
   stopAutomationScheduler()
 })
