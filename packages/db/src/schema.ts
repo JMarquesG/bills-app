@@ -25,6 +25,7 @@ export const bootstrapSQL = `
     file_path text,
     folder_path text,
     description text,
+    items text, -- JSON array of {description, amount}
     notes text,
     paid_at timestamp,
     created_at timestamp default current_timestamp,

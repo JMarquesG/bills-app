@@ -228,8 +228,20 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<void> {
         .stroke()
         .restore();
 
-      // Table header
       let y = separatorY + 15;
+
+      // If we have explicit items, use the main description as a summary title above the table
+      if (data.description && data.items && data.items.length > 0) {
+        y = drawWrappedText(doc, data.description, margin, y, {
+          font: "Helvetica-Bold",
+          size: 11,
+          color: dark,
+          maxWidth: width - margin * 2,
+        });
+        y += 15;
+      }
+
+      // Table header
       doc
         .save()
         .restore();

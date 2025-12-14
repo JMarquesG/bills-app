@@ -17,6 +17,10 @@ const createBillSchema = z.object({
   currency: z.string().default('EUR'),
   number: z.string().min(1),
   description: z.string().optional(),
+  items: z.array(z.object({
+    description: z.string().min(1),
+    amount: z.string()
+  })).optional(),
   notes: z.string().optional(),
   source: z.discriminatedUnion('type', [
     z.object({ type: z.literal('auto') }),
@@ -33,6 +37,10 @@ const previewInvoiceSchema = z.object({
   currency: z.string().default('EUR'),
   number: z.string().min(1),
   description: z.string().optional(),
+  items: z.array(z.object({
+    description: z.string().min(1),
+    amount: z.string()
+  })).optional(),
   notes: z.string().optional()
 })
 
@@ -45,6 +53,10 @@ const updateBillSchema = z.object({
   currency: z.string().default('EUR'),
   number: z.string().min(1),
   description: z.string().optional(),
+  items: z.array(z.object({
+    description: z.string().min(1),
+    amount: z.string()
+  })).optional(),
   notes: z.string().optional()
 })
 
@@ -64,6 +76,24 @@ ipcMain.handle('bill:preview', async (_e, input) => {
       if (profileText) seller = JSON.parse(profileText)
     } catch {}
 
+    // Load client details if present
+    let clientDetails: any = { name: data.clientName }
+    try {
+      const clientRes = await client.query('SELECT * FROM client WHERE name = $1 LIMIT 1', [data.clientName])
+      if (clientRes.rows.length > 0) {
+        const c = clientRes.rows[0]
+        clientDetails = {
+          name: c.name,
+          address: c.address,
+          email: c.email,
+          phone: c.phone,
+          taxId: c.tax_id
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load client details for preview:', err)
+    }
+
     await generateInvoicePdf({
       number: data.number,
       clientName: data.clientName,
@@ -73,8 +103,10 @@ ipcMain.handle('bill:preview', async (_e, input) => {
       currency: data.currency,
       outputPath: pdfPath,
       seller,
-      client: { name: data.clientName },
-      items: [{ description: data.description || 'Serveis professionals', amount: data.amount }],
+      client: clientDetails,
+      items: data.items && data.items.length > 0 
+        ? data.items 
+        : [{ description: data.description || 'Serveis professionals', amount: data.amount }],
       description: data.description,
       notes: data.notes || null
     })
@@ -117,6 +149,48 @@ ipcMain.handle('bill:create', async (_, input) => {
     
     // Ensure output path
     const pdfPath = join(billFolder, 'invoice.pdf')
+
+    // Create or find client first to get details for PDF
+    let clientId: string
+    let clientDetails: any = { name: data.clientName }
+
+    if (data.clientId) {
+      clientId = data.clientId
+      try {
+        const clientRes = await client.query('SELECT * FROM client WHERE id = $1', [clientId])
+        if (clientRes.rows.length > 0) {
+          const c = clientRes.rows[0]
+          clientDetails = {
+            name: c.name,
+            address: c.address,
+            email: c.email,
+            phone: c.phone,
+            taxId: c.tax_id
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch client details:', err)
+      }
+    } else {
+      const clientResult = await client.query('SELECT * FROM client WHERE name = $1 LIMIT 1', [data.clientName])
+      if (clientResult.rows.length === 0) {
+        clientId = generateId()
+        await client.query(
+          'INSERT INTO client (id, name, created_at, updated_at) VALUES ($1, $2, current_timestamp, current_timestamp)',
+          [clientId, data.clientName]
+        )
+      } else {
+        const c = clientResult.rows[0] as any
+        clientId = c.id
+        clientDetails = {
+          name: c.name,
+          address: c.address,
+          email: c.email,
+          phone: c.phone,
+          taxId: c.tax_id
+        }
+      }
+    }
     
     if (data.source.type === 'file') {
       try {
@@ -143,12 +217,10 @@ ipcMain.handle('bill:create', async (_, input) => {
           currency: data.currency,
           outputPath: pdfPath,
           seller,
-          client: {
-            name: data.clientName
-          },
-          items: [
-            { description: data.description || 'Serveis professionals', amount: data.amount }
-          ],
+          client: clientDetails,
+          items: data.items && data.items.length > 0
+            ? data.items
+            : [{ description: data.description || 'Serveis professionals', amount: data.amount }],
           description: data.description,
           notes: data.notes || null
         })
@@ -158,30 +230,14 @@ ipcMain.handle('bill:create', async (_, input) => {
       }
     }
     
-    // Create or find client
-    let clientId: string
-    if (data.clientId) {
-      clientId = data.clientId
-    } else {
-      const clientResult = await client.query('SELECT id FROM client WHERE name = $1 LIMIT 1', [data.clientName])
-      if (clientResult.rows.length === 0) {
-        clientId = generateId()
-        await client.query(
-          'INSERT INTO client (id, name, created_at, updated_at) VALUES ($1, $2, current_timestamp, current_timestamp)',
-          [clientId, data.clientName]
-        )
-      } else {
-        const client = clientResult.rows[0] as { id: string }
-        clientId = client.id
-      }
-    }
-    
     // Insert invoice record
     const invoiceId = generateId()
+    const itemsJson = data.items ? JSON.stringify(data.items) : null
+    
     await client.query(
-      `INSERT INTO invoice (id, number, client_id, issue_date, expected_payment_date, amount, currency, status, file_path, folder_path, description, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, current_timestamp, current_timestamp)`,
-      [invoiceId, data.number, clientId, data.issueDate, expectedPaymentDate.toISOString().slice(0,10), data.amount, data.currency, pdfPath, billFolder, data.description, data.notes || null]
+      `INSERT INTO invoice (id, number, client_id, issue_date, expected_payment_date, amount, currency, status, file_path, folder_path, description, items, notes, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12, current_timestamp, current_timestamp)`,
+      [invoiceId, data.number, clientId, data.issueDate, expectedPaymentDate.toISOString().slice(0,10), data.amount, data.currency, pdfPath, billFolder, data.description, itemsJson, data.notes || null]
     )
     
     // Create automatic backup after successful bill creation
@@ -246,6 +302,7 @@ ipcMain.handle('bill:get', async (_e, billId: string) => {
                i.file_path,
                i.folder_path,
                i.description,
+               i.items,
                i.notes,
                i.paid_at,
         i.created_at,
@@ -278,6 +335,7 @@ ipcMain.handle('bill:get', async (_e, billId: string) => {
                filePath: row.file_path,
                folderPath: row.folder_path,
                description: row.description,
+               items: row.items ? JSON.parse(row.items) : [],
                notes: row.notes,
         paidAt: row.paid_at,
         createdAt: row.created_at,
@@ -317,9 +375,9 @@ ipcMain.handle('bill:update', async (_e, input) => {
 
     await client.query(
       `UPDATE invoice 
-       SET number=$1, client_id=$2, issue_date=$3, expected_payment_date=$4, amount=$5, currency=$6, description=$7, notes=$8, updated_at=current_timestamp
-       WHERE id=$9`,
-      [data.number, clientId, data.issueDate, expectedPaymentDate, data.amount, data.currency, data.description, data.notes || null, data.id]
+       SET number=$1, client_id=$2, issue_date=$3, expected_payment_date=$4, amount=$5, currency=$6, description=$7, items=$8, notes=$9, updated_at=current_timestamp
+       WHERE id=$10`,
+      [data.number, clientId, data.issueDate, expectedPaymentDate, data.amount, data.currency, data.description, data.items ? JSON.stringify(data.items) : null, data.notes || null, data.id]
     )
 
     return { ok: true }

@@ -1,0 +1,2 @@
+ALTER TABLE invoice ADD COLUMN IF NOT EXISTS items text;
+

@@ -12,6 +12,9 @@ interface AutomationRule {
   clientId: string
   clientName: string
   clientEmail: string
+  clientAddress?: string
+  clientPhone?: string
+  clientTaxId?: string
   name: string
   dayOfMonth: number
   amount: string
@@ -146,7 +149,13 @@ async function processAutomationRule(rule: AutomationRule): Promise<{ success: b
       currency: rule.currency,
       outputPath: pdfPath,
       seller: companyProfile,
-      client: null, // We'll need to fetch client details if needed
+      client: {
+        name: rule.clientName,
+        email: rule.clientEmail,
+        address: rule.clientAddress,
+        phone: rule.clientPhone,
+        taxId: rule.clientTaxId
+      },
       items: [{
         description: rule.description,
         amount: rule.amount
@@ -284,7 +293,10 @@ async function processDueAutomations() {
         ar.body_template,
         ar.cc_emails,
         c.name as client_name,
-        c.email as client_email
+        c.email as client_email,
+        c.address as client_address,
+        c.phone as client_phone,
+        c.tax_id as client_tax_id
       FROM automation_rule ar
       LEFT JOIN client c ON ar.client_id = c.id
       WHERE ar.is_active = true 
@@ -306,6 +318,9 @@ async function processDueAutomations() {
         clientId: row.client_id,
         clientName: row.client_name,
         clientEmail: row.client_email,
+        clientAddress: row.client_address,
+        clientPhone: row.client_phone,
+        clientTaxId: row.client_tax_id,
         name: row.name,
         dayOfMonth: row.day_of_month,
         amount: row.amount,
