@@ -264,6 +264,17 @@ async function runSimpleMigrations() {
     } catch (error) {
       console.log('ℹ️ Could not add Supabase columns - likely already exist');
     }
+
+    // Add items column to invoice if missing
+    try {
+      const currentClient = getClient();
+      await currentClient.query(`
+        ALTER TABLE invoice ADD COLUMN IF NOT EXISTS items text;
+      `);
+      console.log('✅ Ensured items column exists on invoice');
+    } catch (error) {
+      console.log('ℹ️ Could not add items column - likely already exists');
+    }
     
   } catch (error) {
     console.log('ℹ️ Migrations skipped - database may be freshly initialized');

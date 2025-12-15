@@ -908,7 +908,33 @@ ipcMain.handle('sync:forcePush', async () => {
 
 // Cleanup on app exit
 process.on('beforeExit', () => {
-  cleanupSubscriptions()
+  stopSyncScheduler()
 })
+
+let syncInterval: NodeJS.Timeout | null = null
+
+export async function startSyncScheduler() {
+  console.log('🔄 Starting sync scheduler...')
+  
+  // Run immediately on startup
+  await performSync()
+  await setupRealtimeSubscriptions()
+
+  // Schedule periodic sync (every 5 minutes) to catch up and push local changes
+  if (syncInterval) clearInterval(syncInterval)
+  syncInterval = setInterval(() => {
+    console.log('⏰ Running scheduled sync...')
+    performSync().catch(err => console.error('Scheduled sync failed:', err))
+  }, 5 * 60 * 1000) // 5 minutes
+}
+
+export function stopSyncScheduler() {
+  if (syncInterval) {
+    clearInterval(syncInterval)
+    syncInterval = null
+  }
+  cleanupSubscriptions()
+  console.log('🛑 Sync scheduler stopped')
+}
 
 export { performSync, setupRealtimeSubscriptions, cleanupSubscriptions }

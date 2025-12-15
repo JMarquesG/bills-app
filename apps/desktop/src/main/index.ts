@@ -5,6 +5,7 @@ import { is } from '@electron-toolkit/utils'
 import { initDb } from '@bills/db'
 import './ipc'
 import { startAutomationScheduler, stopAutomationScheduler } from './automation-scheduler'
+import { startSyncScheduler, stopSyncScheduler } from './ipc/sync'
 
 function createWindow(): void {
   // Create the browser window.
@@ -67,6 +68,9 @@ app.whenReady().then(async () => {
     
     // Start automation scheduler
     startAutomationScheduler()
+    
+    // Start sync scheduler (auto-sync with Supabase if enabled)
+    startSyncScheduler()
   } catch (error) {
     console.error('❌ Database initialization failed:', error)
     // Don't prevent app from starting - user can reconfigure if needed
@@ -109,4 +113,5 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   stopAutomationScheduler()
+  stopSyncScheduler()
 })

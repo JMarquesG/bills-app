@@ -325,7 +325,24 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<void> {
       }
 
       // Footer
-      const paymentText = `A pagar en 30 dies`;
+      let paymentText = 'A pagar';
+      if (data.expectedPaymentDate) {
+        const issue = new Date(data.issueDate);
+        const expected = new Date(data.expectedPaymentDate);
+        
+        // Calculate difference in days
+        const diffTime = Math.abs(expected.getTime() - issue.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 0) {
+          paymentText = `A pagar al moment`;
+        } else {
+          paymentText = `A pagar en ${diffDays} dies`;
+        }
+      } else {
+        paymentText = `A pagar en 30 dies`;
+      }
+
       doc
         .font("Helvetica-Bold")
         .fontSize(11)

@@ -6,6 +6,7 @@ import { client, createAutoBackupIfPossible } from '@bills/db'
 import { generateInvoicePdf } from '../pdf'
 import { getDataRoot, getBillsFolder, ensureDirectoryExists } from './settings'
 import { generateId } from './utils'
+import { performSync } from './sync'
 
 // Input schemas for validation
 const createBillSchema = z.object({
@@ -243,6 +244,9 @@ ipcMain.handle('bill:create', async (_, input) => {
     // Create automatic backup after successful bill creation
     createAutoBackupIfPossible() // Don't await to avoid slowing down the UI response
     
+    // Trigger auto-sync
+    performSync().catch(console.error)
+
     return { ok: true, id: invoiceId, folderPath: billFolder, filePath: pdfPath }
   } catch (error) {
     console.error('Failed to create bill:', error)
@@ -279,6 +283,9 @@ ipcMain.handle('bill:delete', async (_, billId: string) => {
     // Delete from database
     await client.query('DELETE FROM invoice WHERE id = $1', [validatedId])
     
+    // Trigger auto-sync
+    performSync().catch(console.error)
+
     return { ok: true }
   } catch (error) {
     return { error: { code: 'DELETE_BILL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
@@ -380,6 +387,9 @@ ipcMain.handle('bill:update', async (_e, input) => {
       [data.number, clientId, data.issueDate, expectedPaymentDate, data.amount, data.currency, data.description, data.items ? JSON.stringify(data.items) : null, data.notes || null, data.id]
     )
 
+    // Trigger auto-sync
+    performSync().catch(console.error)
+
     return { ok: true }
   } catch (error) {
     return { error: { code: 'UPDATE_BILL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
@@ -398,6 +408,9 @@ ipcMain.handle('bill:updateStatus', async (_, billId: string, status: string) =>
       [validatedStatus, paidAt, validatedId]
     )
     
+    // Trigger auto-sync
+    performSync().catch(console.error)
+
     return { ok: true }
   } catch (error) {
     return { error: { code: 'UPDATE_STATUS_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }

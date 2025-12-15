@@ -7,6 +7,7 @@ import { generateObject } from 'ai'
 import { client, createAutoBackupIfPossible } from '@bills/db'
 import { getDataRoot, getExpensesFolder, ensureDirectoryExists } from './settings'
 import { generateId, createError } from './utils'
+import { performSync } from './sync'
 
 const addExpenseSchema = z.object({
   date: z.string(), // ISO date string
@@ -79,6 +80,9 @@ ipcMain.handle('expense:add', async (_, input) => {
     // Create automatic backup after successful expense creation
     createAutoBackupIfPossible() // Don't await to avoid slowing down the UI response
     
+    // Trigger auto-sync
+    performSync().catch(console.error)
+
     return { ok: true, id: expenseId }
   } catch (error) {
     return createError('ADD_EXPENSE_ERROR', error)
@@ -144,6 +148,9 @@ ipcMain.handle('expense:update', async (_e, input) => {
     // Create automatic backup after successful expense update
     createAutoBackupIfPossible() // Don't await to avoid slowing down the UI response
     
+    // Trigger auto-sync
+    performSync().catch(console.error)
+
     return { ok: true }
   } catch (error) {
     return createError('UPDATE_EXPENSE_ERROR', error)
@@ -209,6 +216,9 @@ ipcMain.handle('expense:attachFile', async (_, expenseId: string) => {
     // Update expense record
     await client.query('UPDATE expense SET file_path = $1, updated_at = current_timestamp WHERE id = $2', [destFile, validatedId])
     
+    // Trigger auto-sync
+    performSync().catch(console.error)
+
     return { ok: true, filePath: destFile }
   } catch (error) {
     return createError('ATTACH_FILE_ERROR', error)
@@ -280,6 +290,9 @@ ipcMain.handle('expense:delete', async (_, expenseId: string) => {
     // Delete from database
     await client.query('DELETE FROM expense WHERE id = $1', [validatedId])
     
+    // Trigger auto-sync
+    performSync().catch(console.error)
+
     return { ok: true }
   } catch (error) {
     return { error: { code: 'DELETE_EXPENSE_ERROR', message: error instanceof Error ? error.message : 'Unknown error' } }
