@@ -10,7 +10,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron out/main/index.js",
-    "deploy:mac": "npm run build && npx electron-builder --mac dmg"
+    "deploy:mac": "rm -rf dist-electron out && xattr -cr . ../../node_modules/electron/dist && npm run build && npx electron-builder --mac dmg"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.31",
