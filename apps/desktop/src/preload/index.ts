@@ -10,6 +10,7 @@ export interface BillInput {
   currency?: string
   number: string
   description?: string
+  items?: Array<{ description: string; amount: string }>
   notes?: string
   source: { type: 'auto' } | { type: 'file'; path: string }
 }
@@ -68,11 +69,11 @@ const api = {
   // Bill operations
   createBill: (input: BillInput): Promise<ApiResponse<{ id: string; folderPath: string; filePath: string }>> =>
     ipcRenderer.invoke('bill:create', input),
-  previewBill: (input: Omit<BillInput, 'source' | 'clientId'> & { clientId?: string; expectedPaymentDate?: string; description?: string }): Promise<ApiResponse<{ dataUrl: string }>> =>
+  previewBill: (input: Omit<BillInput, 'source' | 'clientId'> & { clientId?: string }): Promise<ApiResponse<{ dataUrl: string }>> =>
     ipcRenderer.invoke('bill:preview', input),
   getBill: (id: string): Promise<ApiResponse<{ bill: any }>> =>
     ipcRenderer.invoke('bill:get', id),
-  updateBill: (input: { id: string; clientName: string; issueDate: string; expectedPaymentDate?: string; amount: string; currency?: string; number: string; description?: string; notes?: string }): Promise<ApiResponse> =>
+  updateBill: (input: { id: string; clientName: string; issueDate: string; expectedPaymentDate?: string; amount: string; currency?: string; number: string; description?: string; items?: Array<{ description: string; amount: string }>; notes?: string }): Promise<ApiResponse> =>
     ipcRenderer.invoke('bill:update', input),
   
   deleteBill: (id: string): Promise<ApiResponse> =>
