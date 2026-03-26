@@ -6,6 +6,8 @@ export interface BillInput {
   amount: string
   currency?: string
   number: string
+  description?: string
+  items?: Array<{ description: string; amount: string }>
   notes?: string
   source: { type: 'auto' } | { type: 'file'; path: string }
 }
@@ -50,9 +52,9 @@ declare global {
       
       // Bill operations
       createBill: (input: BillInput) => Promise<ApiResponse<{ id: string; folderPath: string; filePath: string }>>
-      previewBill: (input: Omit<BillInput, 'source' | 'clientId'> & { clientId?: string }) => Promise<ApiResponse<{ dataUrl: string }>>
+      previewBill: (input: Omit<BillInput, 'source' | 'clientId'> & { clientId?: string; items?: Array<{ description: string; amount: string }> }) => Promise<ApiResponse<{ dataUrl: string }>>
       getBill: (id: string) => Promise<ApiResponse<{ bill: any }>>
-      updateBill: (input: { id: string; clientName: string; issueDate: string; expectedPaymentDate?: string; amount: string; currency?: string; number: string; notes?: string }) => Promise<ApiResponse>
+      updateBill: (input: { id: string; clientName: string; issueDate: string; expectedPaymentDate?: string; amount: string; currency?: string; number: string; description?: string; items?: Array<{ description: string; amount: string }>; notes?: string }) => Promise<ApiResponse>
       deleteBill: (id: string) => Promise<ApiResponse>
       updateBillStatus: (id: string, status: string) => Promise<ApiResponse>
       

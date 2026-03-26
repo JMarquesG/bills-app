@@ -16,6 +16,7 @@ interface Bill {
   filePath?: string
   folderPath?: string
   description?: string
+  items?: Array<{ description: string; amount: string }>
   notes?: string
   paidAt?: string
   createdAt: string
@@ -34,6 +35,7 @@ export default function EditBillPage() {
     currency: 'EUR',
     number: '',
     description: '',
+    items: [] as Array<{ description: string; amount: string }>,
     notes: ''
   })
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
@@ -94,6 +96,7 @@ export default function EditBillPage() {
             currency: bill.currency || 'EUR',
             number: bill.number || '',
             description: bill.description || '',
+            items: bill.items || [],
             notes: bill.notes || ''
           })
           
@@ -182,6 +185,7 @@ export default function EditBillPage() {
         currency: formData.currency,
         number: formData.number.trim(),
         description: formData.description.trim() || undefined,
+        items: formData.items.length > 0 ? formData.items : undefined,
         notes: formData.notes.trim() || undefined
       })
 
@@ -205,7 +209,39 @@ export default function EditBillPage() {
       [field]: value
     }))
   }
-  
+
+  const handleAddItem = () => {
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, { description: '', amount: '' }]
+    }))
+  }
+
+  const handleRemoveItem = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }))
+  }
+
+  const handleItemChange = (index: number, field: 'description' | 'amount', value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.map((item, i) => i === index ? { ...item, [field]: value } : item)
+    }))
+  }
+
+  // Auto-calculate total amount from items
+  useEffect(() => {
+    if (formData.items.length > 0) {
+      const total = formData.items.reduce((sum, item) => {
+        const val = parseFloat(item.amount)
+        return sum + (isNaN(val) ? 0 : val)
+      }, 0)
+      setFormData(prev => ({ ...prev, amount: total.toFixed(2) }))
+    }
+  }, [formData.items])
+
   // Generate live PDF preview on form changes (same as New.tsx)
   useEffect(() => {
     let active = true
@@ -227,6 +263,7 @@ export default function EditBillPage() {
             currency: formData.currency,
             number,
             description: formData.description,
+            items: formData.items,
             notes: formData.notes
           })
           if (active && !res.error) setPdfUrl(res.dataUrl)
@@ -258,6 +295,7 @@ export default function EditBillPage() {
             currency: formData.currency,
             number,
             description: formData.description,
+            items: formData.items,
             notes: formData.notes
           })
           if (!res.error) setPdfUrl(res.dataUrl)
@@ -386,8 +424,9 @@ export default function EditBillPage() {
                   onChange={(e) => handleInputChange('amount', e.target.value)}
                   onBlur={handleInputBlur}
                   placeholder="0.00"
-                  className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  className={`w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all ${formData.items.length > 0 ? 'opacity-70 cursor-not-allowed' : ''}`}
                   required
+                  readOnly={formData.items.length > 0}
                 />
               </div>
 
@@ -422,6 +461,57 @@ export default function EditBillPage() {
                 className="w-full p-3 rounded-xl text-base bg-background text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-y whitespace-pre-wrap break-words"
                 required
               />
+
+              {/* Items List */}
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-card-foreground">Items (optional)</label>
+                  <button type="button" onClick={handleAddItem} className="btn btn-sm btn-outline text-xs">
+                    + Add Item
+                  </button>
+                </div>
+
+                {formData.items.length > 0 && (
+                  <div className="space-y-3 mb-2">
+                    {formData.items.map((item, idx) => (
+                      <div key={idx} className="flex gap-2 items-start">
+                        <div className="flex-grow">
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={(e) => handleItemChange(idx, 'description', e.target.value)}
+                            placeholder="Item description"
+                            className="w-full p-2 rounded-lg text-sm bg-background text-foreground border border-input focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                        </div>
+                        <div className="w-28 flex-shrink-0">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={item.amount}
+                            onChange={(e) => handleItemChange(idx, 'amount', e.target.value)}
+                            placeholder="Amount"
+                            className="w-full p-2 rounded-lg text-sm bg-background text-foreground border border-input focus:outline-none focus:ring-2 focus:ring-primary/20 text-right"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(idx)}
+                          className="p-2 text-muted-foreground hover:text-destructive transition-colors"
+                          title="Remove item"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                    <div className="text-right text-xs text-muted-foreground">
+                      Total calculated from items: <span className="font-medium text-foreground">{formData.amount || '0.00'} {formData.currency}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Notes / Observations */}
